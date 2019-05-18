@@ -8,6 +8,8 @@
 #include <cmath>
 #include <ctime>
 #include <cstdlib>
+#include <sstream>
+#include <Math.hpp>
 
 // billy boy
 ////////////////////////////////////////////////////////////
@@ -21,11 +23,11 @@ int main()
     std::srand(static_cast<unsigned int>(std::time(NULL)));
 
     // Define some constants
-    const float pi = 3.14159f;
     const int gameWidth = 800;
     const int gameHeight = 600;
-    sf::Vector2f paddleSize(25, 100);
-    float ballRadius = 10.f;
+
+    float cursorRadius = 10.f;
+    float playerRadius = 20.f;
 
     // Create the window of the application
     sf::RenderWindow window(sf::VideoMode(gameWidth, gameHeight, 32), "SFML Pong",
@@ -38,29 +40,23 @@ int main()
         return EXIT_FAILURE;
     sf::Sound ballSound(ballSoundBuffer);
 
-    // Create the left paddle
-    sf::RectangleShape leftPaddle;
-    leftPaddle.setSize(paddleSize - sf::Vector2f(3, 3));
-    leftPaddle.setOutlineThickness(3);
-    leftPaddle.setOutlineColor(sf::Color::Black);
-    leftPaddle.setFillColor(sf::Color(100, 100, 200));
-    leftPaddle.setOrigin(paddleSize / 2.f);
-
-    // Create the right paddle
-    sf::RectangleShape rightPaddle;
-    rightPaddle.setSize(paddleSize - sf::Vector2f(3, 3));
-    rightPaddle.setOutlineThickness(3);
-    rightPaddle.setOutlineColor(sf::Color::Black);
-    rightPaddle.setFillColor(sf::Color(200, 100, 100));
-    rightPaddle.setOrigin(paddleSize / 2.f);
 
     // Create the ball
-    sf::CircleShape ball;
-    ball.setRadius(ballRadius - 3);
-    ball.setOutlineThickness(3);
-    ball.setOutlineColor(sf::Color::Black);
-    ball.setFillColor(sf::Color::White);
-    ball.setOrigin(ballRadius / 2, ballRadius / 2);
+    sf::CircleShape player;
+    player.setRadius(playerRadius - 3);
+    player.setOutlineThickness(3);
+    player.setOutlineColor(sf::Color::Black);
+    player.setFillColor(sf::Color::White);
+    player.setOrigin(playerRadius / 2, playerRadius / 2);
+
+       // Create the ball
+    sf::CircleShape cursor;
+    cursor.setRadius(10.0f);
+    cursor.setOutlineThickness(3);
+    cursor.setOutlineColor(sf::Color::Black);
+    cursor.setFillColor(sf::Color::White);
+    cursor.setOrigin(cursorRadius / 2, cursorRadius / 2);
+
 
     // Load the text font
     sf::Font font;
@@ -75,165 +71,47 @@ int main()
     pauseMessage.setFillColor(sf::Color::White);
     pauseMessage.setString("Welcome to SFML pong!\nPress space to start the game");
 
-    // Define the paddles properties
-    sf::Clock AITimer;
-    const sf::Time AITime   = sf::seconds(0.1f);
-    const float paddleSpeed = 400.f;
-    float rightPaddleSpeed  = 0.f;
-    const float ballSpeed   = 400.f;
-    float ballAngle         = 0.f; // to be changed later
-
     sf::Clock clock;
-    bool isPlaying = false;
+
     while (window.isOpen())
     {
         // Handle events
         sf::Event event;
         while (window.pollEvent(event))
         {
-            // Window closed or escape key pressed: exit
-            if ((event.type == sf::Event::Closed) ||
-               ((event.type == sf::Event::KeyPressed) && (event.key.code == sf::Keyboard::Escape)))
+            if (event.type == sf::Event::Closed || (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Escape))
             {
                 window.close();
-                break;
-            }
-
-            // Space key pressed: play
-            if ((event.type == sf::Event::KeyPressed) && (event.key.code == sf::Keyboard::Space))
-            {
-                if (!isPlaying)
-                {
-                    // (re)start the game
-                    isPlaying = true;
-                    clock.restart();
-
-                    // Reset the position of the paddles and ball
-                    leftPaddle.setPosition(10 + paddleSize.x / 2, gameHeight / 2);
-                    rightPaddle.setPosition(gameWidth - 10 - paddleSize.x / 2, gameHeight / 2);
-                    ball.setPosition(gameWidth / 2, gameHeight / 2);
-
-                    // Reset the ball angle
-                    do
-                    {
-                        // Make sure the ball initial angle is not too much vertical
-                        ballAngle = (std::rand() % 360) * 2 * pi / 360;
-                    }
-                    while (std::abs(std::cos(ballAngle)) < 0.7f);
-                }
             }
         }
 
-        if (isPlaying)
-        {
-            float deltaTime = clock.restart().asSeconds();
 
-            // Move the player's paddle
-            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Up) &&
-               (leftPaddle.getPosition().y - paddleSize.y / 2 > 5.f))
-            {
-                leftPaddle.move(0.f, -paddleSpeed * deltaTime);
-            }
-            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Down) &&
-               (leftPaddle.getPosition().y + paddleSize.y / 2 < gameHeight - 5.f))
-            {
-                leftPaddle.move(0.f, paddleSpeed * deltaTime);
-            }
+        sf::Vector2f v;
 
-            // Move the computer's paddle
-            if (((rightPaddleSpeed < 0.f) && (rightPaddle.getPosition().y - paddleSize.y / 2 > 5.f)) ||
-                ((rightPaddleSpeed > 0.f) && (rightPaddle.getPosition().y + paddleSize.y / 2 < gameHeight - 5.f)))
-            {
-                rightPaddle.move(0.f, rightPaddleSpeed * deltaTime);
-            }
+        v.x = sf::Mouse::getPosition(window).x;
+        v.y = sf::Mouse::getPosition(window).y;
 
-            // Update the computer's paddle direction according to the ball position
-            if (AITimer.getElapsedTime() > AITime)
-            {
-                AITimer.restart();
-                if (ball.getPosition().y + ballRadius > rightPaddle.getPosition().y + paddleSize.y / 2)
-                    rightPaddleSpeed = paddleSpeed;
-                else if (ball.getPosition().y - ballRadius < rightPaddle.getPosition().y - paddleSize.y / 2)
-                    rightPaddleSpeed = -paddleSpeed;
-                else
-                    rightPaddleSpeed = 0.f;
-            }
+        cursor.setPosition(v);
 
-            // Move the ball
-            float factor = ballSpeed * deltaTime;
-            ball.move(std::cos(ballAngle) * factor, std::sin(ballAngle) * factor);
+        v.x = v.y = 0.0f;
 
-            // Check collisions between the ball and the screen
-            if (ball.getPosition().x - ballRadius < 0.f)
-            {
-                isPlaying = false;
-                pauseMessage.setString("You lost!\nPress space to restart or\nescape to exit");
-            }
-            if (ball.getPosition().x + ballRadius > gameWidth)
-            {
-                isPlaying = false;
-                pauseMessage.setString("You won!\nPress space to restart or\nescape to exit");
-            }
-            if (ball.getPosition().y - ballRadius < 0.f)
-            {
-                ballSound.play();
-                ballAngle = -ballAngle;
-                ball.setPosition(ball.getPosition().x, ballRadius + 0.1f);
-            }
-            if (ball.getPosition().y + ballRadius > gameHeight)
-            {
-                ballSound.play();
-                ballAngle = -ballAngle;
-                ball.setPosition(ball.getPosition().x, gameHeight - ballRadius - 0.1f);
-            }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Up))       v.y = 1.0f;
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Down))     v.y = -1.0f;
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Left))     v.x = -1.0f;
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Right))    v.x = 1.0f;
 
-            // Check the collisions between the ball and the paddles
-            // Left Paddle
-            if (ball.getPosition().x - ballRadius < leftPaddle.getPosition().x + paddleSize.x / 2 &&
-                ball.getPosition().x - ballRadius > leftPaddle.getPosition().x &&
-                ball.getPosition().y + ballRadius >= leftPaddle.getPosition().y - paddleSize.y / 2 &&
-                ball.getPosition().y - ballRadius <= leftPaddle.getPosition().y + paddleSize.y / 2)
-            {
-                if (ball.getPosition().y > leftPaddle.getPosition().y)
-                    ballAngle = pi - ballAngle + (std::rand() % 20) * pi / 180;
-                else
-                    ballAngle = pi - ballAngle - (std::rand() % 20) * pi / 180;
+        v.x += player.getPosition().x;
+        v.y += player.getPosition().y;
 
-                ballSound.play();
-                ball.setPosition(leftPaddle.getPosition().x + ballRadius + paddleSize.x / 2 + 0.1f, ball.getPosition().y);
-            }
+        player.setPosition(v);
 
-            // Right Paddle
-            if (ball.getPosition().x + ballRadius > rightPaddle.getPosition().x - paddleSize.x / 2 &&
-                ball.getPosition().x + ballRadius < rightPaddle.getPosition().x &&
-                ball.getPosition().y + ballRadius >= rightPaddle.getPosition().y - paddleSize.y / 2 &&
-                ball.getPosition().y - ballRadius <= rightPaddle.getPosition().y + paddleSize.y / 2)
-            {
-                if (ball.getPosition().y > rightPaddle.getPosition().y)
-                    ballAngle = pi - ballAngle + (std::rand() % 20) * pi / 180;
-                else
-                    ballAngle = pi - ballAngle - (std::rand() % 20) * pi / 180;
-
-                ballSound.play();
-                ball.setPosition(rightPaddle.getPosition().x - ballRadius - paddleSize.x / 2 - 0.1f, ball.getPosition().y);
-            }
-        }
 
         // Clear the window
         window.clear(sf::Color(50, 200, 50));
 
-        if (isPlaying)
-        {
-            // Draw the paddles and the ball
-            window.draw(leftPaddle);
-            window.draw(rightPaddle);
-            window.draw(ball);
-        }
-        else
-        {
-            // Draw the pause message
-            window.draw(pauseMessage);
-        }
+        window.draw(player);
+        window.draw(cursor);
+        window.draw(pauseMessage);
 
         // Display things on screen
         window.display();
