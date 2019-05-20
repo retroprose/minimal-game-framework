@@ -5,11 +5,7 @@
 ////////////////////////////////////////////////////////////
 #include <SFML/Graphics.hpp>
 #include <SFML/Audio.hpp>
-#include <cmath>
-#include <ctime>
-#include <cstdlib>
-#include <sstream>
-#include <Math.hpp>
+
 
 // billy boy
 ////////////////////////////////////////////////////////////
@@ -20,19 +16,18 @@
 ////////////////////////////////////////////////////////////
 int main()
 {
-    std::srand(static_cast<unsigned int>(std::time(NULL)));
-
     // Define some constants
     const int gameWidth = 800;
     const int gameHeight = 600;
 
-    float cursorRadius = 10.f;
-    float playerRadius = 20.f;
+    float cursorRadius = 10.0f;
+    float playerRadius = 20.0f;
 
     // Create the window of the application
     sf::RenderWindow window(sf::VideoMode(gameWidth, gameHeight, 32), "SFML Pong",
                             sf::Style::Titlebar | sf::Style::Close);
     window.setVerticalSyncEnabled(true);
+    window.setFramerateLimit(60);
 
     // Load the sounds used in the game
     sf::SoundBuffer ballSoundBuffer;
@@ -41,17 +36,19 @@ int main()
     sf::Sound ballSound(ballSoundBuffer);
 
 
-    // Create the ball
+    // Create the player circle to be controlled by WASD
     sf::CircleShape player;
+    player.setPosition(gameWidth / 2, gameHeight / 2);
     player.setRadius(playerRadius - 3);
     player.setOutlineThickness(3);
     player.setOutlineColor(sf::Color::Black);
     player.setFillColor(sf::Color::White);
     player.setOrigin(playerRadius / 2, playerRadius / 2);
 
-       // Create the ball
+    // Create the cursor that will follow the mouse
     sf::CircleShape cursor;
-    cursor.setRadius(10.0f);
+    cursor.setPosition(0.0f, 0.0f);
+    cursor.setRadius(cursorRadius);
     cursor.setOutlineThickness(3);
     cursor.setOutlineColor(sf::Color::Black);
     cursor.setFillColor(sf::Color::White);
@@ -63,16 +60,16 @@ int main()
     if (!font.loadFromFile("resources/sansation.ttf"))
         return EXIT_FAILURE;
 
-    // Initialize the pause message
-    sf::Text pauseMessage;
-    pauseMessage.setFont(font);
-    pauseMessage.setCharacterSize(40);
-    pauseMessage.setPosition(170.f, 150.f);
-    pauseMessage.setFillColor(sf::Color::White);
-    pauseMessage.setString("Welcome to SFML pong!\nPress space to start the game");
+    // Initialize the info message
+    sf::Text message;
+    message.setFont(font);
+    message.setCharacterSize(40);
+    message.setPosition(0.0f, 500.0f);
+    message.setFillColor(sf::Color::White);
+    message.setString("SFML keyboard and mouse demo\n We will turn this into a top down shooter!");
 
-    sf::Clock clock;
 
+    // This will be the main game loop
     while (window.isOpen())
     {
         // Handle events
@@ -85,7 +82,7 @@ int main()
             }
         }
 
-
+        // update coordinates, this is where the game state will be updated
         sf::Vector2f v;
 
         v.x = sf::Mouse::getPosition(window).x;
@@ -95,10 +92,10 @@ int main()
 
         v.x = v.y = 0.0f;
 
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Up))       v.y = 1.0f;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Down))     v.y = -1.0f;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Left))     v.x = -1.0f;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Right))    v.x = 1.0f;
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::W))    v.y = -5.0f;
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::S))    v.y =  5.0f;
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::A))    v.x = -5.0f;
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::D))    v.x =  5.0f;
 
         v.x += player.getPosition().x;
         v.y += player.getPosition().y;
@@ -106,16 +103,18 @@ int main()
         player.setPosition(v);
 
 
+        // Rendering code
         // Clear the window
         window.clear(sf::Color(50, 200, 50));
 
         window.draw(player);
         window.draw(cursor);
-        window.draw(pauseMessage);
+        window.draw(message);
 
         // Display things on screen
         window.display();
     }
 
+    // exit the app
     return EXIT_SUCCESS;
 }

@@ -67,11 +67,11 @@
 			<Add option="-Wall" />
 			<Add option="-DSFML_STATIC" />
 			<Add directory="D:/Programming/C++/SFML-2.5.1/include" />
+			<Add directory="../../include" />
 		</Compiler>
 		<Linker>
 			<Add directory="D:/Programming/C++/SFML-2.5.1/lib" />
 		</Linker>
-		<Unit filename="../../include/Math.hpp" />
 		<Unit filename="../../src/Pong.cpp" />
 		<Extensions>
 			<code_completion />
