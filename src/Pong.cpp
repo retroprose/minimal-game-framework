@@ -5,7 +5,7 @@
 ////////////////////////////////////////////////////////////
 #include <SFML/Graphics.hpp>
 #include <SFML/Audio.hpp>
-
+#include <Math.hpp>
 
 // billy boy
 ////////////////////////////////////////////////////////////
@@ -35,25 +35,14 @@ int main()
         return EXIT_FAILURE;
     sf::Sound ballSound(ballSoundBuffer);
 
+    // Create the circle shape that will be used to render everything
+    sf::CircleShape circle;
+    circle.setOutlineThickness(3);
+    circle.setOutlineColor(sf::Color::Black);
+    circle.setFillColor(sf::Color::White);
 
-    // Create the player circle to be controlled by WASD
-    sf::CircleShape player;
-    player.setPosition(gameWidth / 2, gameHeight / 2);
-    player.setRadius(playerRadius - 3);
-    player.setOutlineThickness(3);
-    player.setOutlineColor(sf::Color::Black);
-    player.setFillColor(sf::Color::White);
-    player.setOrigin(playerRadius / 2, playerRadius / 2);
-
-    // Create the cursor that will follow the mouse
-    sf::CircleShape cursor;
-    cursor.setPosition(0.0f, 0.0f);
-    cursor.setRadius(cursorRadius);
-    cursor.setOutlineThickness(3);
-    cursor.setOutlineColor(sf::Color::Black);
-    cursor.setFillColor(sf::Color::White);
-    cursor.setOrigin(cursorRadius / 2, cursorRadius / 2);
-
+    // our new vectors
+    Vector2 cursorPos, playerPos = Vector2(gameWidth / 2, gameHeight / 2);
 
     // Load the text font
     sf::Font font;
@@ -83,32 +72,37 @@ int main()
         }
 
         // update coordinates, this is where the game state will be updated
-        sf::Vector2f v;
+        cursorPos = Vector2(sf::Mouse::getPosition(window).x, sf::Mouse::getPosition(window).y);
 
-        v.x = sf::Mouse::getPosition(window).x;
-        v.y = sf::Mouse::getPosition(window).y;
+        // get a movement vector
+        Vector2 move(0.0f, 0.0f);
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::W))    move.y = -1.0f;
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::S))    move.y =  1.0f;
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::A))    move.x = -1.0f;
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::D))    move.x =  1.0f;
 
-        cursor.setPosition(v);
+        // this will make the player move a constant speed in all directions, even diagonals
+        move.Normalize();
 
-        v.x = v.y = 0.0f;
-
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::W))    v.y = -5.0f;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::S))    v.y =  5.0f;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::A))    v.x = -5.0f;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::D))    v.x =  5.0f;
-
-        v.x += player.getPosition().x;
-        v.y += player.getPosition().y;
-
-        player.setPosition(v);
+        playerPos += move * 5.0f;
 
 
         // Rendering code
         // Clear the window
         window.clear(sf::Color(50, 200, 50));
 
-        window.draw(player);
-        window.draw(cursor);
+        // draw player
+        circle.setPosition(playerPos.x, playerPos.y);
+        circle.setRadius(playerRadius);
+        circle.setOrigin(playerRadius / 2, playerRadius / 2);
+        window.draw(circle);
+
+        // draw cursor
+        circle.setPosition(cursorPos.x, cursorPos.y);
+        circle.setRadius(cursorRadius);
+        circle.setOrigin(cursorRadius / 2, cursorRadius / 2);
+        window.draw(circle);
+
         window.draw(message);
 
         // Display things on screen
