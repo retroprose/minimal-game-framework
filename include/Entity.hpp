@@ -596,9 +596,12 @@ class BaseState {
 public:
     static const uint16_t NullSignature = 0;
 
-    State() {
+    BaseState() {
         // put in the null signature
-        signatures.push_back( Signature() );
+        uint16_t index = signatures.size();
+        Signature n;
+        signatures.push_back(n);
+        signature_map[n] = index;
     }
 
     const Signature& GetSignature(uint16_t index) {
