@@ -184,7 +184,6 @@ struct Cp {
     }
 };
 
-//constexpr const uint8_t Cp::CpRef::table[];
 
 
 ////////////////////////////////////////////////////////////
@@ -248,7 +247,7 @@ int main()
 
     state.Extend(5000);
 
-    Entity playerEntity = state.Create();
+    auto playerEntity = state.Create();
 
     state.UpdateSignature(playerEntity, {Cp::Player, Cp::Animator, Cp::Body});
 
@@ -259,7 +258,7 @@ int main()
     pref.animator->color = Color(1.0f, 1.0f, 1.0f);
 
     for (int i = 0; i < 500; i++) {
-        Entity e = state.Create();
+        auto e = state.Create();
 
         state.UpdateSignature(e, {Cp::Body, Cp::Animator});
 
@@ -279,6 +278,7 @@ int main()
 
     std::vector<Entity> removebatch;
 
+
     // This will be the main game loop
     while (window.isOpen())
     {
@@ -296,15 +296,18 @@ int main()
         removebatch.clear();
         state.ForEach<Cp::Body>([&](Cp::EntityRef& r) {
             if (rand()%100  == 0) {
-                removebatch.push_back( state.FromHash( r.GetHash() ) );
+                auto e = state.FromHash(r.GetHash());
+                if (e != playerEntity)
+                    removebatch.push_back(e);
             }
         });
+
         for (int i = 0; i < removebatch.size(); i++)
             state.Destroy(removebatch[i]);
 
 
         for (int i = 0; i < 10; i++) {
-             Entity e = state.Create();
+             auto e = state.Create();
 
              state.UpdateSignature(e, {Cp::Body, Cp::Animator});
 
