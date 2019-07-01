@@ -4,26 +4,22 @@
 #include <iostream>
 
 /*
-#define ASSERT(x) Assert(#x, x)
+    I am defining my own assert here just for added
+    flexibility and the ability to remove it from all
+    files by changing one line.
+    (just uncomment the next line, and comment out the next)
+*/
 
-void Assert(const char* s, bool b) {
+//#define ASSERT(x)
+#define ASSERT(x) Assert(#x, x, __FILE__, __LINE__)
+
+void Assert(const char* s, bool b, const char* file, int line) {
     if (b == false) {
-        std::cout << "Assertion failed: (" << s << "), file " << __FILE__ << ", line " << __LINE__ << ".\n";
-        //printf("Assertion failed: (%s), file %s, line %d.\n", s, __FILE__, __LINE__);
+        std::cout << "Assertion failed: (" << s << "), file " << file << ", line " << line << ".\n";
+        //printf("Assertion failed: (%s), file %s, line %d.\n", s, file, line);
         abort();
         //throw 0;
     }
 }
-*/
-
-#define ASSERT(x) \
-{ \
-    if (!(x)) \
-    { \
-        std::cout << "Assertion failed: (" << #x << "), file " << __FILE__ << ", line " << __LINE__ << ".\n"; \
-        abort(); \
-    } \
-}
-
 
 #endif // ERROR_HPP

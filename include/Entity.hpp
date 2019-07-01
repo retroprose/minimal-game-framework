@@ -8,34 +8,29 @@
 
 #include <Error.hpp>
 
-#include <fstream>
-#include <iostream>
-
 /*
-    State<P>
-    BaseEntityRef
+    Classes that appear in this file:
+
+    Signature
+    SignatureId
+
+    SignatureManager
+
 
     Ref<T>
-    VectorMap<T>
     VectorMapHash
-    AnyVectorMap
+    VectorMap
+    AnyVectorRef
 
     Entity
-    Signature
-    GenerationData
+    EntityManager
 
+    Cmd
 
-
-    generation uint16_t
-    signature uint16_t
-
-    index uint16_t
-    entityIndex uint16_t
-
-    8 bytes
+    BaseEntityRef
+    BaseState<T>
 
 */
-
 
 /*
     Forward declare classes used as friend classes
@@ -45,27 +40,6 @@ class BaseState;
 class EntityManager;
 class SignatureManager;
 
-
-class SignatureId {
-public:
-    constexpr SignatureId() : value(0) { }
-
-    Signature(std::initializer_list<uint8_t> list) = delete;
-
-    bool operator< (const SignatureId& rhs) const { return value <  rhs.value; }
-    bool operator==(const SignatureId& rhs) const { return value == rhs.value; }
-    bool operator!=(const SignatureId& rhs) const { return value != rhs.value; }
-
-    uint16_t Value() const {
-        return value;
-    }
-
-private:
-    friend class SignatureManager;
-
-    uint16_t value;
-
-};
 
 
 /*
@@ -88,7 +62,7 @@ public:
     constexpr static const uint8_t NullCp = 0xff;
 
     /*
-        We need this static function becuase you can't have a
+        We need this static function because you can't have a
         template constructor on a non-template class.
         We can use this to create a list from a compile time
         list of component id's, which helps us generate code
@@ -209,7 +183,7 @@ public:
     }
 
     /*
-        Begin and end define the begining and end of list of
+        Begin and end define the beginning and end of list of
         component id's, here so we can use for ( const auto& comp_id : signature ) { }
 
         This uses a bit of hackery to interpret the uint32_t array as an array of
@@ -295,7 +269,7 @@ private:
     }
 
     /*
-        Initilizes all components to null component.
+        Initializes all components to null component.
     */
     void Init() {
         uint32_t* p = bits;
@@ -338,11 +312,36 @@ private:
 };
 
 
+/*
+    This class was necessary to remove ambiguities when having two different
+    change signature functions, one for a component signature list, and one
+    for a signature id.  Its a friend of SignatureManager so that
+    the manager can make all valid values for you.
+*/
+class SignatureId {
+public:
+    // this is the null signature id
+    constexpr SignatureId() : value(0) { }
+
+    bool operator< (const SignatureId& rhs) const { return value <  rhs.value; }
+    bool operator==(const SignatureId& rhs) const { return value == rhs.value; }
+    bool operator!=(const SignatureId& rhs) const { return value != rhs.value; }
+
+    uint16_t Value() const {
+        return value;
+    }
+
+private:
+    friend class SignatureManager;
+
+    uint16_t value;
+
+};
 
 
 /*
     A smart reference that is almost identical to a raw pointer,
-    with the exception that it is initilized to nullptr, and
+    with the exception that it is initializer list to nullptr, and
     will assert if you try and dereference a null pointer.
 */
 template<typename T>
@@ -404,7 +403,7 @@ private:
 /*
     The VectorMap is the container that partitions components in memory so that
     components with the same signature are close in memory.  This allows
-    the component system 'ForEach' loop have better cache efficentcy.
+    the component system 'ForEach' loop have better cache efficiency.
 
     I went for this method because I didn't like the idea of just ignoring
     all the components on an entity that aren't used, and having to iterate
@@ -434,7 +433,7 @@ private:
     /*
         I'm using the standard library to implement this container,
         but it could be done without to remove dependency on the
-        standary library.  The only two standard containers I'm using
+        standard library.  The only two standard containers I'm using
         are maps and vectors, and algorithms to sort vectors.
     */
     using table_type = std::map<SignatureId, std::vector<T>>;
@@ -547,7 +546,7 @@ public:
 
     Untracked entities are always considered valid and active, and use the
     bits differently as there is no generation data needed to be tracked.
-    These are useful for refering to things such as tiles in tile maps
+    These are useful for referring to things such as tiles in tile maps
     without having to use any extra memory for tracking.  For example
     you can have a component that doesn't use a VectorMap, but is a
     2 dimensional grid of tiles.  You would have a tile type value
@@ -623,8 +622,8 @@ private:
     This class is based on another bit of hackery, it uses a form
     of type erasure to get generic references to the different types
     of vector maps.  It's basically like a delegate.  There are probably
-    better ways to write this, but I wanted to get polymophism without
-    class hiearchies and without having to allocate memory, AND making
+    better ways to write this, but I wanted to get polymorphism without
+    class hierarchies and without having to allocate memory, AND making
     the class simple to understand and debug.
 
     There are plenty of articles stemming from the first in 2005 of
@@ -673,18 +672,18 @@ public:
 
     /*
         This constructor asserts if the buffer isn't large enough to contain the
-        deived class, or if the resulting memory address of the new doesn't
+        derived class, or if the resulting memory address of the new doesn't
         start at the start of the buffer.  This class makes the assumption that
         the pointer to base type will be the same as pointer to derived type
         since it's only single inheritance...  I'm not sure if this is completely
-        garrenteed across all compilers though.  The assert may not even catch
+        guaranteed across all compilers though.  The assert may not even catch
         a condition that it isn't...    but it works for now.
     */
     template<typename T>
     AnyVectorRef(T& t) {
         ASSERT(sizeof(derived<T>) <= MaxBuffer);
-        derived<T>* d = new (_buffer) derived<T>(t);
-        ASSERT(reinterpret_cast<derived<T>*>(d) - reinterpret_cast<derived<T>*>(_buffer) == 0);
+        base* d = new (_buffer) derived<T>(t);
+        ASSERT(d - Base() == 0);
     }
 
     void Move(VectorMapHash old_hash, SignatureId new_hash_signature) { Base()->Move(old_hash, new_hash_signature); }
@@ -695,23 +694,27 @@ public:
 
 
 
-
+/*
+    This class is responsible for converting to and from component signature lists and
+    signature ids.
+*/
 class SignatureManager {
 public:
-
+    /*
+        Makes sure the first signature id 0 is always the null signature
+    */
     SignatureManager() {
         GetId( { /* This is the null signature */ } );
     }
 
-    static SignatureId Null() {
+    /*
+        Get the null signature
+    */
+    constexpr static SignatureId Null() {
         return SignatureId();
     }
 
     /*
-        This function is called internally when entities are created with new
-        signatures.  It can also be called up front to remove start up memory
-        allocations to get the vectors up to size for your game/level.
-
         Signatures are stored in a vector and also a map that maps from
         the signature value to where it is in the vector.
     */
@@ -722,6 +725,8 @@ public:
             // if its not found, register a new one by putting it in the vector,
             // and the signature map.
             //id = SignatureId(signatures.size());
+            // can't use a constructor because it conflicted with the
+            // initializer list constructor of Signature
             id.value = signatures.size();
             signatures.push_back(signature);
             signature_map[signature] = id;
@@ -733,8 +738,11 @@ public:
         return id;
     }
 
+    /*
+        Asserts when the signature id is out of range... shouldn't ever happen
+        though, if you only operate with SignatureIds though the manager
+    */
     const Signature& Get(SignatureId signature) const {
-        bool a = (signature.Value() >= 0 && signature.Value() < signatures.size());
         ASSERT(signature.Value() >= 0 && signature.Value() < signatures.size());
         return signatures[signature.Value()];
     }
@@ -755,23 +763,26 @@ private:
 class EntityManager {
 public:
 
+    /*
+        This structure is used to store generations of used entity values.
+        The 'unsafe' value is experimental that would be used for entities
+        that don't need to be uniquely identified.
+    */
     struct GenerationInfo {
         uint16_t generation : 15;
         uint16_t unsafe : 1;
     };
 
+    /*
+        Starts empty
+    */
     EntityManager() : head(END_OF_LIST), tail(END_OF_LIST) { }
 
-    bool Valid(Entity entity) const {
-        if ( entity.Tracked().untracked == 1 ||
-             (entity.Tracked().index < ginfo.size() &&
-              ginfo[entity.Tracked().index].generation == entity.Tracked().generation )
-           ) {
-           return true;
-        }
-        return false;
-    }
-
+    /*
+        This function will reserve more entries that will help
+        entries from getting over used and running out of
+        unique generation ids.
+    */
     void Extend(uint16_t e) {
         uint16_t s = ginfo.size();
         Entity::tracked_t entity;
@@ -788,6 +799,25 @@ public:
         }
     }
 
+    /*
+        So if an entity is 'untracked', it will always be considered valid.
+        otherwise we need to make sure the index is valid, and
+        the generations match.  If they don't, it means the entity was
+        destroyed.
+    */
+    bool Valid(Entity entity) const {
+        if ( entity.Tracked().untracked == 1 ||
+             (entity.Tracked().index < ginfo.size() &&
+              ginfo[entity.Tracked().index].generation == entity.Tracked().generation )
+           ) {
+           return true;
+        }
+        return false;
+    }
+
+    /*
+        Reserves an entity entry
+    */
     Entity Create() {
         Entity::tracked_t entity;
         if (head == END_OF_LIST) {
@@ -809,6 +839,9 @@ public:
         return Entity(entity);
     }
 
+    /*
+        Not ready to start using this experimental function.
+    */
     /*
     Entity CreateUnsafe() {
         Entity::tracked_t entity;
@@ -832,9 +865,18 @@ public:
     }
     */
 
+    /*
+        This function destroys the entity, and puts its index back into the linked list of
+        free indices.
+    */
     void Destroy(Entity entity) {
         ASSERT(entity.Tracked().untracked == 0 && ginfo[entity.Tracked().index].generation == entity.Tracked().generation);
         if (ginfo[entity.Tracked().index].generation == 0x7fff) {
+            /*
+                For debugging it's good to know if we hit the
+                end of a generation increment.  Otherwise we
+                can just let it turn over at our own risk...
+            */
             ASSERT(false);
             /*ginfo[entity.Tracked().index].unsafe = 0;
             ginfo[entity.Tracked().index].generation = 1;
@@ -846,7 +888,7 @@ public:
             }
             tail = entity.Tracked().index;*/
         } else {
-            // we won't incerment if unsafe is set to 1
+            // we won't increment if unsafe is set to 1
             ginfo[entity.Tracked().index].unsafe = 0;
             ++ginfo[entity.Tracked().index].generation;
             hashes[entity.Tracked().index].index = END_OF_LIST;
@@ -859,6 +901,11 @@ public:
         }
     }
 
+    /*
+        These functions allow us to map between
+        hash values used to access components,
+        and the fixed entity value.
+    */
     VectorMapHash& GetHash(uint16_t entity_index) {
         return hashes[entity_index];
     }
@@ -919,15 +966,24 @@ protected:
 };
 
 
-
+/*
+    This struct is used to buffer deletes and signature changes
+    so that you don't screw up your data organization inside of the
+    state ForEach loop.
+*/
 struct Cmd {
+    /*
+        The type of command determines
+        how the signature is applied, (change, add, remove)
+        or if the entity needs to be destroyed completely.
+    */
     enum UpdateType : uint8_t {
         Add = 0,
         Remove,
         Change,
         Destroy,
     };
-    Cmd(Entity e, uint8_t t, SignatureId id = SignatureId(), uint16_t i = 0) {
+    Cmd(Entity e, uint8_t t, SignatureId id = SignatureId(), uint16_t i = 0x3fff) {
         entity = e;
         signature = id;
         update.type = t;
@@ -937,86 +993,33 @@ struct Cmd {
         uint16_t index : 14;
         uint16_t type : 2;
     } update;
-    SignatureId signature;
-    Entity entity;
+    SignatureId signature;  // signature to apply
+    Entity entity;          // entity to change
 };
 
 
 /*
-    void ReserveSignature(const Signature& signature, uint16_t count)
+    This class will be used to store the state of your game.
+    The type T will be a pack of component containers that
+    can be referenced dynamically with an 'Any' function.
 
-    void Extend(uint16_t e)
-
-
-    Entity Create()
-
-    const Signature& GetSignature(Entity entity) const
-
-    bool Valid(Entity entity) const
-
-    void UpdateBatch(std::vector<UpdateEntry>& list)
-
-    uint16_t SigId(const Signature& signature)
-
-    void ChangeSignature(Entity entity, const Signature& signature)
-    void RemoveSignature(Entity entity, const Signature& signature)
-    void AddSignature(Entity entity, const Signature& signature)
-
-    void DestroyEntity(Entity entity)
-
-
-    typename T::EntityRef GetRef(Entity entity)
-
-    void ForEach(F func)
-    void ForEachFast(F func)
-
-
-
-
-
-    This is the class that stores the state of your game.
-
-    void Extend(uint16_t e)
-    uint16_t Reserve(const Signature& signature, uint16_t count = 0)
-
-    Entity Create()
-    void UpdateBatch(std::vector<UpdateEntity>& list)
-    Add
-    Remove
-    Change
-    Destroy
-
-    const Signature& GetSignature(Entity entity) const
-    bool Valid(Entity entity) const
-
-    typename T::EntityRef GetRef(Entity entity)
-
-    void ForEachFast(F func)
-    void ForEach(F func)
-
-
-    // The following functions can invalidate references and
-    // should NOT be called within any ForEach lambda function
-    // These should all be a single updatebatch list
-    // UpdateEntity vector
-    // type:  2 bits add, remove, change, destroy
-    // index: 14 bits index to create data
-    // entity: uint32_t entity  (null means create one!)
-    // signautre: 16 bits
-    void Destroy(Entity entity)
-    void UpdateSignature(Entity entity, const Signature& signature)
-    void RemoveSignature(Entity entity, const Signature& signature)
-    void AddSignature(Entity entity, const Signature& signature)
+    The ForEach function iterates through all of your components.
+    The Destroy and Signature changing functions should not be
+    called during this iteration, as they invalidate
+    references.
 */
 template<typename T>
 class BaseState {
 public:
+    /*
+        Is the entity currently valid?
+    */
     bool Valid(Entity entity) const {
         return entityManager.Valid(entity);
     }
 
     /*
-        UpdateBatch functions
+        Runs a batch of commands on the entities.
     */
     void Batch(std::vector<Cmd>& list) {
         for (size_t i = 0; i < list.size(); ++i) {
@@ -1031,7 +1034,17 @@ public:
         }
     }
 
+    /*
+        Extends your entity manager list
+    */
+    void Extend(uint16_t e) {
+        entityManager.Extend(e);
+    }
 
+    /*
+        Reserves memory for a signature so you don't get the default
+        vector behavior.
+    */
     void ReserveSignature(const Signature& signature, uint16_t count) {
         SignatureId signature_id = signatureManager.GetId(signature);
         if (signature_id != SignatureManager::Null() && entityData.HasSignature(signature_id) == false) {
@@ -1042,26 +1055,42 @@ public:
         }
     }
 
-    void Extend(uint16_t e) {
-        entityManager.Extend(e);
-    }
-
+    /*
+        Gets the signature of a given entity.
+    */
     const Signature& GetSignature(Entity entity) const {
         ASSERT(entity.Tracked().untracked == 0 && Valid(entity) == true);
         return signatureManager.Get( entityManager.GetHash(entity.Tracked().index).signature );
     }
 
+    /*
+        Returns an unused valid entity value
+    */
     Entity Create() {
         return entityManager.Create();
     }
 
+    /*
+        This is where most of the magic happens in this entity
+        framework.  Entity signatures can be changed dynamically,
+        but shouldn't be changed in the 'ForEach' loop.
+
+        When signatures change, the location of the components change
+        in memory, and the entity hashes need to be updated.
+
+        This function asserts if the entity is untracked or invalid.
+    */
     void ChangeSignature(Entity entity, SignatureId signature_id) {
         ASSERT(entity.Tracked().untracked == 0 && Valid(entity) == true);
-        VectorMapHash old_hash = entityManager.GetHash(entity.Tracked().index);
+        VectorMapHash old_hash = entityManager.GetHash(entity.Tracked().index); // gets the current hash of the entity
         VectorMapHash new_hash;
 
         if (old_hash.signature == signature_id) return; // don't switch it with itself!
 
+        /*
+            If the signature isn't null, and entityData doesn't contain the signature yet,
+            it needs to be initialized.
+        */
         if (signature_id != SignatureManager::Null() && entityData.HasSignature(signature_id) == false) {
             const Signature& reg_sig = signatureManager.Get(signature_id);
             entityData.Register(signature_id, 0);
@@ -1070,13 +1099,19 @@ public:
             }
         }
 
-        // cache this for faster updates
+        /*
+            All components that appear in both the old and new signatures needs to be moved.
+        */
         const Signature sig = signatureManager.Get(old_hash.signature) + signatureManager.Get(signature_id);
         entityData.Move(old_hash, signature_id);
         for (const auto& cid : sig) {
             pack.Any(cid).Move(old_hash, signature_id);
         }
 
+        /*
+            if the new signature isn't null, the entity data pointing back to the
+            fixed entity value needs to be updated.
+        */
         new_hash.signature = signature_id;
         //new_hash.index = 0;
         if (new_hash.signature != SignatureManager::Null() ) {
@@ -1084,6 +1119,11 @@ public:
             *entityData.Get(new_hash) = entity.Tracked().index;
         }
 
+        /*
+            So potentially two different entity components will move,
+            the one being changed, and the one that is displacing the
+            current changed entity by swapping their positions.
+        */
         Ref<uint16_t> swapped_entity = entityData.Get(old_hash);
         if (swapped_entity.IsNull() == false) {
             entityManager.GetHash(*swapped_entity) = old_hash;
@@ -1091,6 +1131,10 @@ public:
         entityManager.GetHash(entity.Tracked().index) = new_hash;
     }
 
+    /*
+        These two functions allow you to add components and remove components with
+        less typing.
+    */
     void RemoveSignature(Entity entity, SignatureId signature_id) {
         const Signature& signature = signatureManager.Get(signature_id);
         ChangeSignature( entity, signatureManager.GetId( GetSignature(entity) - signature ) );
@@ -1101,12 +1145,17 @@ public:
         ChangeSignature( entity, signatureManager.GetId(GetSignature(entity) + signature) );
     }
 
-
+    /*
+        Gets the id of a given signature
+    */
     SignatureId SigId(const Signature& signature) {
         return signatureManager.GetId(signature);
     }
 
-
+    /*
+        The next 3 functions allow you to specify full signatures
+        for convenience in syntax.
+    */
     void ChangeSignature(Entity entity, const Signature& signature) {
         ChangeSignature( entity, signatureManager.GetId(signature) );
     }
@@ -1119,12 +1168,19 @@ public:
         ChangeSignature( entity, signatureManager.GetId( GetSignature(entity) + signature ) );
     }
 
-
+    /*
+        This function changes the signature of an entity to null,
+        then destroys the use of that entity value.
+    */
     void DestroyEntity(Entity entity) {
         ChangeSignature( entity, SignatureManager::Null() );
         entityManager.Destroy(entity);
     }
 
+    /*
+        This function will return an EntityRef (that needs to be defined in the pack)
+        that will reference all of the components.
+    */
     typename T::EntityRef GetRef(Entity entity) {
         ASSERT(Valid(entity) == true);
         typename T::EntityRef r;
@@ -1138,6 +1194,25 @@ public:
         return r;
     }
 
+    /*
+        This allows us to get a reference to just the
+        components that we want.
+    */
+    template<uint8_t... Args>
+    typename T::EntityRef GetRef(Entity entity) {
+        ASSERT(Valid(entity) == true);
+        typename T::EntityRef r;
+        VectorMapHash& hash = entityManager.GetHash(entity.Tracked().index);
+        r.entity = entity;
+        r.hash = hash;
+        SetRef<Args...>(r);
+        return r;
+    }
+
+    /*
+        The next 2 functions iterate though all entities that match a
+        given signature.
+    */
     template<uint8_t... Args, typename F>
     void ForEach(F func) {
         uint32_t i;
@@ -1182,6 +1257,9 @@ public:
     }
 
 protected:
+    /*
+        functions that map between entity and entity hashes
+    */
     VectorMapHash FromEntity(Entity entity) const {
         return entityManager.GetHash(entity.Tracked().index);
     }
@@ -1190,6 +1268,10 @@ protected:
         return entityManager.FromIndex(*entityData.Get(hash));
     }
 
+    /*
+        These template functions statically loop though signature components
+        for the foreach function.
+    */
     template<uint8_t C>
     static void IncrementRef(typename T::EntityRef& r) {
         r.begin()[C] += sizeof(typename std::tuple_element<C, typename T::type_table>::type);
@@ -1213,13 +1295,13 @@ protected:
         SetRef<C2, Args...>(r);
     }
 
-    SignatureManager signatureManager;
+    SignatureManager signatureManager;  // manages signatures
 
-    EntityManager entityManager;
+    EntityManager entityManager;        // manages entities (stores entity hashes)
 
-    VectorMap<uint16_t> entityData;
+    VectorMap<uint16_t> entityData;     // point from entity hashes back to the entities.
 
-    T pack;
+    T pack;                             // the pack of components.
 
 };
 

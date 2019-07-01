@@ -354,7 +354,7 @@ int main()
 
         // move player
         if (state.Valid(playerEntity) == true) {
-            auto playerRef = state.GetRef(playerEntity);
+            auto playerRef = state.GetRef<Cp::Player>(playerEntity);
             if (!playerRef.player.IsNull()) {
 
                 playerRef.player->control.cursor = cursorPos;
