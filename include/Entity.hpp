@@ -428,6 +428,10 @@ public:
         return s;
     }
 
+    bool HasSignature(uint16_t signature) const {
+        return table.find(signature) != table.end();
+    }
+
     /*
         These two functions allow us to use for( const auto& signature : vectormap ) { }
         It's probably possible make iterators that iterate individual components
@@ -788,17 +792,7 @@ public:
     const VectorMapHash& GetHash(uint16_t entity_index) const {
         return hashes[entity_index];
     }
-/*
-    VectorMapHash& GetHash(Entity entity) {
-        ASSERT(entity.Tracked().untracked == 0 && ginfo[entity.Tracked().index].generation == entity.Tracked().generation);
-        return hashes[entity.Tracked().index];
-    }
 
-    const VectorMapHash& GetHash(Entity entity) const {
-        ASSERT(entity.Tracked().untracked == 0 && ginfo[entity.Tracked().index].generation == entity.Tracked().generation);
-        return hashes[entity.Tracked().index];
-    }
-*/
     Entity FromIndex(uint16_t index) const {
         ASSERT(index < ginfo.size());
         Entity::tracked_t entity;
@@ -808,7 +802,7 @@ public:
         return Entity(entity);
     }
 
-//private:
+private:
     static const uint16_t END_OF_LIST = 0xffff;
 
     uint16_t head;
@@ -852,29 +846,94 @@ protected:
 
 
 
+struct UpdateEntry {
+    enum UpdateType : uint8_t {
+        Add = 0,
+        Remove,
+        Change,
+        Destroy,
+    };
+    struct TypeIndex {
+        uint16_t index : 14;
+        uint16_t type : 2;
+    } update;
+    uint16_t signature;
+    Entity entity;
+};
 
 
 /*
+    void ReserveSignature(const Signature& signature, uint16_t count)
+
+    void Extend(uint16_t e)
+
+
+    Entity Create()
+
+    const Signature& GetSignature(Entity entity) const
+
+    bool Valid(Entity entity) const
+
+
+    UpdateEntry Change(Entity entity, const Signature& signature, uint16_t index = 0x3fff)
+    UpdateEntry Add(Entity entity, const Signature& signature, uint16_t index = 0x3fff)
+    UpdateEntry Remove(Entity entity, const Signature& signature)
+    UpdateEntry Destroy(Entity entity)
+    void UpdateBatch(std::vector<UpdateEntry>& list)
+
+
+    uint16_t SignatureId(const Signature& signature)
+
+    void ChangeSignatureId(Entity entity, uint16_t signature_id)
+    void RemoveSignatureId(Entity entity, uint16_t signature_id)
+    void AddSignatureId(Entity entity, uint16_t signature_id)
+
+    void ChangeSignature(Entity entity, const Signature& signature)
+    void RemoveSignature(Entity entity, const Signature& signature)
+    void AddSignature(Entity entity, const Signature& signature)
+
+    void DestroyEntity(Entity entity)
+
+
+    typename T::EntityRef GetRef(Entity entity)
+
+    void ForEach(F func)
+    void ForEachFast(F func)
+
+
+
+
+
     This is the class that stores the state of your game.
 
     void Extend(uint16_t e)
-    uint16_t RegisterSigniture(const Signature& signature, uint16_t count = 0)
+    uint16_t Reserve(const Signature& signature, uint16_t count = 0)
+
     Entity Create()
+    void UpdateBatch(std::vector<UpdateEntity>& list)
+    Add
+    Remove
+    Change
+    Destroy
 
-
-    const Signature& GetSignature(uint16_t index) const
     const Signature& GetSignature(Entity entity) const
     bool Valid(Entity entity) const
-    VectorMapHash FromEntity(Entity entity) const
-    Entity FromHash(VectorMapHash hash)
 
     typename T::EntityRef GetRef(Entity entity)
+
+    void ForEachFast(F func)
     void ForEach(F func)
+
 
     // The following functions can invalidate references and
     // should NOT be called within any ForEach lambda function
+    // These should all be a single updatebatch list
+    // UpdateEntity vector
+    // type:  2 bits add, remove, change, destroy
+    // index: 14 bits index to create data
+    // entity: uint32_t entity  (null means create one!)
+    // signautre: 16 bits
     void Destroy(Entity entity)
-    void UpdateSignature(Entity entity, uint16_t signature_id)
     void UpdateSignature(Entity entity, const Signature& signature)
     void RemoveSignature(Entity entity, const Signature& signature)
     void AddSignature(Entity entity, const Signature& signature)
@@ -892,77 +951,104 @@ public:
         erased when signature is set to null for an entity.
     */
     BaseState() {
-        uint16_t index = signatures.size();
-        Signature n;
-        signatures.push_back(n);
-        signature_map[n] = index;
-    }
-
-    /*
-        This function is called internally when entities are created with new
-        signatures.  It can also be called up front to remove start up memory
-        allocations to get the vectors up to size for your game/level.
-
-        Signatures are stored in a vector and also a map that maps from
-        the signature value to where it is in the vector.
-    */
-    uint16_t RegisterSigniture(const Signature& signature, uint16_t count = 0) {
-        uint16_t index = 0;
-        std::map<Signature, uint16_t>::const_iterator it = signature_map.find(signature);
-        if (it == signature_map.end()) {
-            // if its not found, register a new one by putting it in the vector,
-            // and the signature map.  Then register the new signature with all
-            // of the component vector maps associated with that signature.
-            index = signatures.size();
-            signatures.push_back(signature);
-            signature_map[signature] = index;
-            entityData.Register(index, count);
-            for (const auto& cid : signature) {
-                pack.Any(cid).Register(index, count);
-            }
-        } else {
-            // if we found it then just return the index it already
-            // exists int the vector
-            index = it->second;
-        }
-        return index;
-    }
-
-    const Signature& GetSignature(uint16_t index) const {
-        ASSERT(index >= 0 && index < signatures.size());
-        return signatures[index];
-    }
-
-   const Signature& GetSignature(Entity entity) const {
-        return signatures[entityManager.GetHash(entity.Tracked().index).signature];
+        SignatureId( {/* This is the null signature! */} );
     }
 
     bool Valid(Entity entity) const {
         return entityManager.Valid(entity);
     }
 
+    /*
+        UpdateBatch functions
+    */
+    UpdateEntry Change(Entity entity, const Signature& signature, uint16_t index = 0x3fff) {
+        UpdateEntry entry;
+        entry.update.type = UpdateEntry::Change;
+        entry.update.index = index;
+        entry.signature = SignatureId(signature);
+        entry.entity = entity;
+        return entry;
+    }
+
+    UpdateEntry Add(Entity entity, const Signature& signature, uint16_t index = 0x3fff) {
+        UpdateEntry entry;
+        entry.update.type = UpdateEntry::Add;
+        entry.update.index = index;
+        entry.signature = SignatureId(signature);
+        entry.entity = entity;
+        return entry;
+    }
+
+    UpdateEntry Remove(Entity entity, const Signature& signature) {
+        UpdateEntry entry;
+        entry.update.type = UpdateEntry::Remove;
+        entry.update.index = 0x3fff;
+        entry.signature = SignatureId(signature);
+        entry.entity = entity;
+        return entry;
+    }
+
+    UpdateEntry Destroy(Entity entity) {
+        UpdateEntry entry;
+        entry.update.type = UpdateEntry::Destroy;
+        entry.update.index = 0x3fff;
+        entry.signature = NullSignature;
+        entry.entity = entity;
+        return entry;
+    }
+
+    void UpdateBatch(std::vector<UpdateEntry>& list) {
+        for (size_t i = 0; i < list.size(); ++i) {
+            UpdateEntry& entry = list[i];
+            switch(entry.update.type) {
+            case UpdateEntry::Add:      AddSignature(entry.entity, entry.signature);    break;
+            case UpdateEntry::Remove:   RemoveSignature(entry.entity, entry.signature); break;
+            case UpdateEntry::Change:   ChangeSignature(entry.entity, entry.signature); break;
+            case UpdateEntry::Destroy:  DestroyEntity(entry.entity);                    break;
+            default: break;
+            }
+        }
+    }
+
+
+    void ReserveSignature(const Signature& signature, uint16_t count) {
+        uint16_t signature_id = SignatureId(signature);
+        if (signature_id != 0 && entityData.HasSignature(signature_id) == false) {
+            entityData.Register(signature_id, count);
+            for (const auto& cid : signature) {
+                pack.Any(cid).Register(signature_id, count);
+            }
+        }
+    }
+
+    const Signature& GetSignature(Entity entity) const {
+        ASSERT(entity.Tracked().untracked == 0 && Valid(entity) == true);
+        return signatures[entityManager.GetHash(entity.Tracked().index).signature];
+    }
+
+
     void Extend(uint16_t e) {
         entityManager.Extend(e);
-    }
-
-    VectorMapHash FromEntity(Entity entity) const {
-        return entityManager.GetHash(entity.Tracked().index);
-    }
-
-    Entity FromHash(VectorMapHash hash) {
-        return entityManager.FromIndex(*entityData.Get(hash));
     }
 
     Entity Create() {
         return entityManager.Create();
     }
 
-    void UpdateSignature(Entity entity, uint16_t signature_id) {
+        void ChangeSignatureId(Entity entity, uint16_t signature_id) {
         ASSERT(entity.Tracked().untracked == 0 && Valid(entity) == true);
         VectorMapHash old_hash = entityManager.GetHash(entity.Tracked().index);
         VectorMapHash new_hash;
 
         if (old_hash.signature == signature_id) return; // don't switch it with itself!
+
+        if (signature_id != 0 && entityData.HasSignature(signature_id) == false) {
+            const Signature& reg_sig = signatures[signature_id];
+            entityData.Register(signature_id, 0);
+            for (const auto& cid : reg_sig) {
+                pack.Any(cid).Register(signature_id, 0);
+            }
+        }
 
         // cache this for faster updates
         const Signature sig = signatures[old_hash.signature] + signatures[signature_id];
@@ -985,81 +1071,57 @@ public:
         entityManager.GetHash(entity.Tracked().index) = new_hash;
     }
 
-    bool CheckForDups() {
-        bool dups = false;
-        std::map<uint16_t, bool> indexes;
-        for (const auto& kv : entityData) {
-            for (int i = 0; i < entityData.Size(kv.first); i++) {
-                VectorMapHash vhash;
-                vhash.signature = kv.first;
-                vhash.index = i;
-                if (entityData.Get(vhash).IsNull() == false) {
-                    uint16_t value = *entityData.Get(vhash);
-                    std::map<uint16_t, bool>::const_iterator it = indexes.find(value);
-                    if (it != indexes.end()) {
-                        dups = true;
-                        std::ofstream os("silly.txt", std::ios::app);
-                        os << "BROKEN: " << value << std::endl;
-                        os.close();
-                    } else {
-                        indexes[value] = true;
-                    }
-                } else {
-                    std::ofstream os("silly.txt", std::ios::app);
-                    os << "IS EMPTY! " << vhash.signature << " " << vhash.index << std::endl;
-                    os.close();
-                }
-            }
-        }
-        return dups;
+    void RemoveSignatureId(Entity entity, uint16_t signature_id) {
+        const Signature& signature = signatures[signature_id];
+        UpdateSignatureId( entity, SignatureId( GetSignature(entity) - signature ) );
     }
 
-    void Print(const std::string& file) {
-        std::ofstream os(file);
-        os << "head: " << entityManager.head << std::endl;
-        os << "tail: " << entityManager.tail << std::endl;
-        os << "index, generation, hash sig, hash index, entity" << std::endl;
-        for (int i = 0; i < entityManager.ginfo.size(); ++i) {
-            os << "e" << i << ": g" << entityManager.ginfo[i].generation << ", s" << entityManager.hashes[i].signature << ", i" << entityManager.hashes[i].index << ", d";
-            Ref<uint16_t> thing = entityData.Get(entityManager.hashes[i]);
-            if (thing.IsNull() == true)
-                os << "NULL";
-            else
-                os << *thing;
-            os << std::endl;
-        }
-        os.close();
+    void AddSignatureId(Entity entity, uint16_t signature_id) {
+        const Signature& signature = signatures[signature_id];
+        UpdateSignatureId( entity, SignatureId( GetSignature(entity) + signature ) );
     }
 
-    void UpdateSignature(Entity entity, const Signature& signature) {
-        UpdateSignature( entity, RegisterSigniture(signature) );
+    /*
+        This function is called internally when entities are created with new
+        signatures.  It can also be called up front to remove start up memory
+        allocations to get the vectors up to size for your game/level.
+
+        Signatures are stored in a vector and also a map that maps from
+        the signature value to where it is in the vector.
+    */
+    uint16_t SignatureId(const Signature& signature) {
+        uint16_t index;
+        std::map<Signature, uint16_t>::const_iterator it = signature_map.find(signature);
+        if (it == signature_map.end()) {
+            // if its not found, register a new one by putting it in the vector,
+            // and the signature map.
+            index = signatures.size();
+            signatures.push_back(signature);
+            signature_map[signature] = index;
+        } else {
+            // if we found it then just return the index it already
+            // exists int the vector
+            index = it->second;
+        }
+        return index;
+    }
+
+    void ChangeSignature(Entity entity, const Signature& signature) {
+        ChangeSignatureId( entity, SignatureId(signature) );
     }
 
     void RemoveSignature(Entity entity, const Signature& signature) {
-        VectorMapHash old_hash = entityManager.GetHash(entity.Tracked().index);
-        Signature new_sig = signatures[old_hash.signature] - signature;
-        UpdateSignature( entity, RegisterSigniture(new_sig) );
+        ChangeSignatureId( entity, SignatureId( GetSignature(entity) - signature ) );
     }
 
     void AddSignature(Entity entity, const Signature& signature) {
-        VectorMapHash old_hash = entityManager.GetHash(entity.Tracked().index);
-        Signature new_sig = signatures[old_hash.signature] + signature;
-        UpdateSignature( entity, RegisterSigniture(new_sig) );
+        ChangeSignatureId( entity, SignatureId( GetSignature(entity) + signature ) );
     }
 
-    void Destroy(Entity entity) {
-        //Print("first.txt");
-
-        UpdateSignature(entity, NullSignature);
+    void DestroyEntity(Entity entity) {
+        ChangeSignature(entity, NullSignature);
         entityManager.Destroy(entity);
-
-        //if (CheckForDups()==true){
-        //    Print("second.txt");
-        //    ASSERT(false);
-        //}
     }
-
-
 
     typename T::EntityRef GetRef(Entity entity) {
         ASSERT(Valid(entity) == true);
@@ -1067,7 +1129,7 @@ public:
         VectorMapHash& hash = entityManager.GetHash(entity.Tracked().index);
         r.entity = entity;
         r.hash = hash;
-        const Signature& signature = GetSignature(hash.signature);
+        const Signature& signature = signatures[hash.signature];
         for (const auto& cid : signature) {
             r.begin()[cid] = pack.Any(cid).Get(r.hash);
         }
@@ -1080,7 +1142,29 @@ public:
         size_t size;
         Signature for_sig = Signature::Gen<Args...>();
         typename T::EntityRef r;
-        r.entity = Entity();        // have to get entity if needed
+        r.entity = Entity();
+        for ( const auto& kv : entityData ) {
+            if ( signatures[kv.first].Contains(for_sig) == true ) {
+                size = entityData.Size(kv.first);
+                r.hash.signature = kv.first;
+                r.hash.index = 0;
+                SetRef<Args...>(r);
+                for (i = 0; i < size; ++i) {
+                    r.entity = FromHash(r.hash);  // only difference between ForEach and ForEachFast
+                    func(r);
+                    IncrementRef<Args...>(r);
+                }
+            }
+        }
+    }
+
+    template<uint8_t... Args, typename F>
+    void ForEachFast(F func) {
+        uint32_t i;
+        size_t size;
+        Signature for_sig = Signature::Gen<Args...>();
+        typename T::EntityRef r;
+        r.entity = Entity();
         for ( const auto& kv : entityData ) {
             if ( signatures[kv.first].Contains(for_sig) == true ) {
                 size = entityData.Size(kv.first);
@@ -1095,7 +1179,15 @@ public:
         }
     }
 
-//protected:
+protected:
+    VectorMapHash FromEntity(Entity entity) const {
+        return entityManager.GetHash(entity.Tracked().index);
+    }
+
+    Entity FromHash(VectorMapHash hash) {
+        return entityManager.FromIndex(*entityData.Get(hash));
+    }
+
     template<uint8_t C>
     static void IncrementRef(typename T::EntityRef& r) {
         r.begin()[C] += sizeof(typename std::tuple_element<C, typename T::type_table>::type);

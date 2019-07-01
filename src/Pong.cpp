@@ -249,7 +249,7 @@ int main()
 
     auto playerEntity = state.Create();
 
-    state.UpdateSignature(playerEntity, {Cp::Player, Cp::Animator, Cp::Body});
+    state.ChangeSignature(playerEntity, {Cp::Player, Cp::Animator, Cp::Body});
 
     auto pref = state.GetRef(playerEntity);
 
@@ -260,7 +260,7 @@ int main()
     for (int i = 0; i < 500; i++) {
         auto e = state.Create();
 
-        state.UpdateSignature(e, {Cp::Body, Cp::Animator});
+        state.ChangeSignature(e, {Cp::Body, Cp::Animator});
 
         int r = rand()%100;
         if (r < 10) {
@@ -276,7 +276,8 @@ int main()
 
     }
 
-    std::vector<Entity> removebatch;
+    //std::vector<BaseState::UpdateEntry> removebatch;
+    std::vector<UpdateEntry> removebatch;
 
 
     // This will be the main game loop
@@ -292,24 +293,26 @@ int main()
             }
         }
 
-
+/*
         removebatch.clear();
         state.ForEach<Cp::Body>([&](Cp::EntityRef& r) {
             if (rand()%100  == 0) {
-                auto e = state.FromHash(r.GetHash());
-                if (e != playerEntity)
-                    removebatch.push_back(e);
+                if (r.GetEntity() != playerEntity)
+                    //removebatch.push_back( r.GetEntity() );
+                    removebatch.push_back( state.Destroy(r.GetEntity()) );
             }
         });
+        state.UpdateBatch(removebatch);
+*/
+        //for (int i = 0; i < removebatch.size(); ++i)
+        //    state.DestroyEntity(removebatch[i]);
 
-        for (int i = 0; i < removebatch.size(); i++)
-            state.Destroy(removebatch[i]);
 
 
         for (int i = 0; i < 10; i++) {
              auto e = state.Create();
 
-             state.UpdateSignature(e, {Cp::Body, Cp::Animator});
+             state.ChangeSignature(e, {Cp::Body, Cp::Animator});
 
             int r = rand()%100;
             if (r < 10) {
@@ -371,11 +374,11 @@ int main()
             }
         }
 
-        state.ForEach<Cp::Body, Cp::Player>([&](Cp::EntityRef& r) {
+        state.ForEachFast<Cp::Body, Cp::Player>([&](Cp::EntityRef& r) {
             r.body->velocity = r.player->control.move;
         });
 
-        state.ForEach<Cp::Body>([&](Cp::EntityRef& r) {
+        state.ForEachFast<Cp::Body>([&](Cp::EntityRef& r) {
             r.body->position += r.body->velocity;
         });
 
@@ -387,7 +390,7 @@ int main()
         window.clear(sf::Color(50, 200, 50));
 
         // draw everything
-        state.ForEach<Cp::Body, Cp::Animator>([&](Cp::EntityRef& r) {
+        state.ForEachFast<Cp::Body, Cp::Animator>([&](Cp::EntityRef& r) {
             circle.setFillColor(sf::Color(r.animator->color.r*255, r.animator->color.g*255, r.animator->color.b*255));
             circle.setPosition(r.body->position.x, r.body->position.y);
             circle.setRadius(playerRadius);
@@ -396,7 +399,7 @@ int main()
         });
 
 
-        state.ForEach<Cp::RadarBlip, Cp::Body>([&](Cp::EntityRef& r) {
+        state.ForEachFast<Cp::RadarBlip, Cp::Body>([&](Cp::EntityRef& r) {
             circle.setFillColor(sf::Color::Black);
             circle.setPosition(r.body->position.x, r.body->position.y);
             circle.setRadius(playerRadius / 2);
