@@ -3,7 +3,6 @@
 
 #include <vector>
 #include <map>
-#include <unordered_map>
 #include <algorithm>
 #include <initializer_list>
 
@@ -44,6 +43,30 @@
 template<typename T>
 class BaseState;
 class EntityManager;
+class SignatureManager;
+
+
+class SignatureId {
+public:
+    constexpr SignatureId() : value(0) { }
+
+    Signature(std::initializer_list<uint8_t> list) = delete;
+
+    bool operator< (const SignatureId& rhs) const { return value <  rhs.value; }
+    bool operator==(const SignatureId& rhs) const { return value == rhs.value; }
+    bool operator!=(const SignatureId& rhs) const { return value != rhs.value; }
+
+    uint16_t Value() const {
+        return value;
+    }
+
+private:
+    friend class SignatureManager;
+
+    uint16_t value;
+
+};
+
 
 /*
     The Signature class stores a static list of component id's in
@@ -316,6 +339,7 @@ private:
 
 
 
+
 /*
     A smart reference that is almost identical to a raw pointer,
     with the exception that it is initilized to nullptr, and
@@ -400,7 +424,7 @@ private:
     16 bit values, these values index into an array of our 24 byte signature lists.
 */
 struct VectorMapHash {
-    uint16_t signature;
+    SignatureId signature;
     uint16_t index;
 };
 
@@ -413,14 +437,14 @@ private:
         standary library.  The only two standard containers I'm using
         are maps and vectors, and algorithms to sort vectors.
     */
-    using table_type = std::unordered_map<uint16_t, std::vector<T>>;
+    using table_type = std::map<SignatureId, std::vector<T>>;
     table_type table;
 
 public:
     /*
         Returns the size of vector for a given signature (0 if vector is empty or doesn't exist)
     */
-    size_t Size(uint16_t signature) const {
+    size_t Size(SignatureId signature) const {
         size_t s = 0;
         typename table_type::const_iterator it = table.find(signature);
         if (it != table.end())
@@ -428,7 +452,7 @@ public:
         return s;
     }
 
-    bool HasSignature(uint16_t signature) const {
+    bool HasSignature(SignatureId signature) const {
         return table.find(signature) != table.end();
     }
 
@@ -469,7 +493,7 @@ public:
         with that signature, and stored a number of components in that signature.
         (each signature type had to be preallocated with a static number)
     */
-    void Register(uint16_t signature, uint16_t count) {
+    void Register(SignatureId signature, uint16_t count) {
         typename table_type::iterator it = table.find(signature);
         if (it == table.end()) {
             table[signature] = std::vector<T>();
@@ -485,7 +509,7 @@ public:
         they are moved from takes the last component in the array and
         swaps it with component being moved)
     */
-    void Move(VectorMapHash old_hash, uint16_t new_hash_signature) {
+    void Move(VectorMapHash old_hash, SignatureId new_hash_signature) {
         ASSERT(old_hash.signature != new_hash_signature);
         typename table_type::iterator old_sig = table.find(old_hash.signature);
         typename table_type::iterator new_sig = table.find(new_hash_signature);
@@ -618,16 +642,16 @@ private:
     constexpr static const size_t MaxBuffer = 8;
 
     struct base {
-        virtual void Move(VectorMapHash old_hash, uint16_t new_hash_signature) = 0;
-        virtual void Register(uint16_t signature, uint16_t count) = 0;
+        virtual void Move(VectorMapHash old_hash, SignatureId new_hash_signature) = 0;
+        virtual void Register(SignatureId signature, uint16_t count) = 0;
         virtual uint8_t* Get(VectorMapHash hash) = 0;
     };
 
     template<typename T>
     struct derived : public base {
         derived(T& t) : r(t) { }
-        void Move(VectorMapHash old_hash, uint16_t new_hash_signature) { r.Move(old_hash, new_hash_signature); }
-        void Register(uint16_t signature, uint16_t count) { r.Register(signature, count); }
+        void Move(VectorMapHash old_hash, SignatureId new_hash_signature) { r.Move(old_hash, new_hash_signature); }
+        void Register(SignatureId signature, uint16_t count) { r.Register(signature, count); }
         uint8_t* Get(VectorMapHash hash) { return r.Get(hash).BytePtr(); }
         T& r;
     };
@@ -663,13 +687,63 @@ public:
         ASSERT(reinterpret_cast<derived<T>*>(d) - reinterpret_cast<derived<T>*>(_buffer) == 0);
     }
 
-    void Move(VectorMapHash old_hash, uint16_t new_hash_signature) { Base()->Move(old_hash, new_hash_signature); }
-    void Register(uint16_t signature, uint16_t count) { Base()->Register(signature, count); }
+    void Move(VectorMapHash old_hash, SignatureId new_hash_signature) { Base()->Move(old_hash, new_hash_signature); }
+    void Register(SignatureId signature, uint16_t count) { Base()->Register(signature, count); }
     uint8_t* Get(VectorMapHash hash) { return Base()->Get(hash); }
 
 };
 
 
+
+
+class SignatureManager {
+public:
+
+    SignatureManager() {
+        GetId( { /* This is the null signature */ } );
+    }
+
+    static SignatureId Null() {
+        return SignatureId();
+    }
+
+    /*
+        This function is called internally when entities are created with new
+        signatures.  It can also be called up front to remove start up memory
+        allocations to get the vectors up to size for your game/level.
+
+        Signatures are stored in a vector and also a map that maps from
+        the signature value to where it is in the vector.
+    */
+    SignatureId GetId(const Signature& signature) {
+        SignatureId id;
+        std::map<Signature, SignatureId>::const_iterator it = signature_map.find(signature);
+        if (it == signature_map.end()) {
+            // if its not found, register a new one by putting it in the vector,
+            // and the signature map.
+            //id = SignatureId(signatures.size());
+            id.value = signatures.size();
+            signatures.push_back(signature);
+            signature_map[signature] = id;
+        } else {
+            // if we found it then just return the index it already
+            // exists int the vector
+            id = it->second;
+        }
+        return id;
+    }
+
+    const Signature& Get(SignatureId signature) const {
+        bool a = (signature.Value() >= 0 && signature.Value() < signatures.size());
+        ASSERT(signature.Value() >= 0 && signature.Value() < signatures.size());
+        return signatures[signature.Value()];
+    }
+
+private:
+    std::map<Signature, SignatureId> signature_map;
+    std::vector<Signature> signatures;
+
+};
 
 
 /*
@@ -846,18 +920,24 @@ protected:
 
 
 
-struct UpdateEntry {
+struct Cmd {
     enum UpdateType : uint8_t {
         Add = 0,
         Remove,
         Change,
         Destroy,
     };
+    Cmd(Entity e, uint8_t t, SignatureId id = SignatureId(), uint16_t i = 0) {
+        entity = e;
+        signature = id;
+        update.type = t;
+        update.index = i;
+    }
     struct TypeIndex {
         uint16_t index : 14;
         uint16_t type : 2;
     } update;
-    uint16_t signature;
+    SignatureId signature;
     Entity entity;
 };
 
@@ -874,19 +954,9 @@ struct UpdateEntry {
 
     bool Valid(Entity entity) const
 
-
-    UpdateEntry Change(Entity entity, const Signature& signature, uint16_t index = 0x3fff)
-    UpdateEntry Add(Entity entity, const Signature& signature, uint16_t index = 0x3fff)
-    UpdateEntry Remove(Entity entity, const Signature& signature)
-    UpdateEntry Destroy(Entity entity)
     void UpdateBatch(std::vector<UpdateEntry>& list)
 
-
-    uint16_t SignatureId(const Signature& signature)
-
-    void ChangeSignatureId(Entity entity, uint16_t signature_id)
-    void RemoveSignatureId(Entity entity, uint16_t signature_id)
-    void AddSignatureId(Entity entity, uint16_t signature_id)
+    uint16_t SigId(const Signature& signature)
 
     void ChangeSignature(Entity entity, const Signature& signature)
     void RemoveSignature(Entity entity, const Signature& signature)
@@ -941,19 +1011,6 @@ struct UpdateEntry {
 template<typename T>
 class BaseState {
 public:
-    static const uint16_t NullSignature = 0;
-
-    /*
-        The constructor of your state will set the first
-        signature to the null signature (zero components)
-        It has a unique trait that vectormaps do not have
-        null signature vectors, so components are automatically
-        erased when signature is set to null for an entity.
-    */
-    BaseState() {
-        SignatureId( {/* This is the null signature! */} );
-    }
-
     bool Valid(Entity entity) const {
         return entityManager.Valid(entity);
     }
@@ -961,50 +1018,14 @@ public:
     /*
         UpdateBatch functions
     */
-    UpdateEntry Change(Entity entity, const Signature& signature, uint16_t index = 0x3fff) {
-        UpdateEntry entry;
-        entry.update.type = UpdateEntry::Change;
-        entry.update.index = index;
-        entry.signature = SignatureId(signature);
-        entry.entity = entity;
-        return entry;
-    }
-
-    UpdateEntry Add(Entity entity, const Signature& signature, uint16_t index = 0x3fff) {
-        UpdateEntry entry;
-        entry.update.type = UpdateEntry::Add;
-        entry.update.index = index;
-        entry.signature = SignatureId(signature);
-        entry.entity = entity;
-        return entry;
-    }
-
-    UpdateEntry Remove(Entity entity, const Signature& signature) {
-        UpdateEntry entry;
-        entry.update.type = UpdateEntry::Remove;
-        entry.update.index = 0x3fff;
-        entry.signature = SignatureId(signature);
-        entry.entity = entity;
-        return entry;
-    }
-
-    UpdateEntry Destroy(Entity entity) {
-        UpdateEntry entry;
-        entry.update.type = UpdateEntry::Destroy;
-        entry.update.index = 0x3fff;
-        entry.signature = NullSignature;
-        entry.entity = entity;
-        return entry;
-    }
-
-    void UpdateBatch(std::vector<UpdateEntry>& list) {
+    void Batch(std::vector<Cmd>& list) {
         for (size_t i = 0; i < list.size(); ++i) {
-            UpdateEntry& entry = list[i];
+            Cmd& entry = list[i];
             switch(entry.update.type) {
-            case UpdateEntry::Add:      AddSignature(entry.entity, entry.signature);    break;
-            case UpdateEntry::Remove:   RemoveSignature(entry.entity, entry.signature); break;
-            case UpdateEntry::Change:   ChangeSignature(entry.entity, entry.signature); break;
-            case UpdateEntry::Destroy:  DestroyEntity(entry.entity);                    break;
+            case Cmd::Add:      AddSignature(entry.entity, entry.signature);    break;
+            case Cmd::Remove:   RemoveSignature(entry.entity, entry.signature); break;
+            case Cmd::Change:   ChangeSignature(entry.entity, entry.signature); break;
+            case Cmd::Destroy:  DestroyEntity(entry.entity);                    break;
             default: break;
             }
         }
@@ -1012,8 +1033,8 @@ public:
 
 
     void ReserveSignature(const Signature& signature, uint16_t count) {
-        uint16_t signature_id = SignatureId(signature);
-        if (signature_id != 0 && entityData.HasSignature(signature_id) == false) {
+        SignatureId signature_id = signatureManager.GetId(signature);
+        if (signature_id != SignatureManager::Null() && entityData.HasSignature(signature_id) == false) {
             entityData.Register(signature_id, count);
             for (const auto& cid : signature) {
                 pack.Any(cid).Register(signature_id, count);
@@ -1021,29 +1042,28 @@ public:
         }
     }
 
-    const Signature& GetSignature(Entity entity) const {
-        ASSERT(entity.Tracked().untracked == 0 && Valid(entity) == true);
-        return signatures[entityManager.GetHash(entity.Tracked().index).signature];
-    }
-
-
     void Extend(uint16_t e) {
         entityManager.Extend(e);
+    }
+
+    const Signature& GetSignature(Entity entity) const {
+        ASSERT(entity.Tracked().untracked == 0 && Valid(entity) == true);
+        return signatureManager.Get( entityManager.GetHash(entity.Tracked().index).signature );
     }
 
     Entity Create() {
         return entityManager.Create();
     }
 
-        void ChangeSignatureId(Entity entity, uint16_t signature_id) {
+    void ChangeSignature(Entity entity, SignatureId signature_id) {
         ASSERT(entity.Tracked().untracked == 0 && Valid(entity) == true);
         VectorMapHash old_hash = entityManager.GetHash(entity.Tracked().index);
         VectorMapHash new_hash;
 
         if (old_hash.signature == signature_id) return; // don't switch it with itself!
 
-        if (signature_id != 0 && entityData.HasSignature(signature_id) == false) {
-            const Signature& reg_sig = signatures[signature_id];
+        if (signature_id != SignatureManager::Null() && entityData.HasSignature(signature_id) == false) {
+            const Signature& reg_sig = signatureManager.Get(signature_id);
             entityData.Register(signature_id, 0);
             for (const auto& cid : reg_sig) {
                 pack.Any(cid).Register(signature_id, 0);
@@ -1051,7 +1071,7 @@ public:
         }
 
         // cache this for faster updates
-        const Signature sig = signatures[old_hash.signature] + signatures[signature_id];
+        const Signature sig = signatureManager.Get(old_hash.signature) + signatureManager.Get(signature_id);
         entityData.Move(old_hash, signature_id);
         for (const auto& cid : sig) {
             pack.Any(cid).Move(old_hash, signature_id);
@@ -1059,7 +1079,7 @@ public:
 
         new_hash.signature = signature_id;
         //new_hash.index = 0;
-        if (new_hash.signature != 0) {
+        if (new_hash.signature != SignatureManager::Null() ) {
             new_hash.index = entityData.Size(signature_id) - 1;
             *entityData.Get(new_hash) = entity.Tracked().index;
         }
@@ -1071,55 +1091,37 @@ public:
         entityManager.GetHash(entity.Tracked().index) = new_hash;
     }
 
-    void RemoveSignatureId(Entity entity, uint16_t signature_id) {
-        const Signature& signature = signatures[signature_id];
-        UpdateSignatureId( entity, SignatureId( GetSignature(entity) - signature ) );
+    void RemoveSignature(Entity entity, SignatureId signature_id) {
+        const Signature& signature = signatureManager.Get(signature_id);
+        ChangeSignature( entity, signatureManager.GetId( GetSignature(entity) - signature ) );
     }
 
-    void AddSignatureId(Entity entity, uint16_t signature_id) {
-        const Signature& signature = signatures[signature_id];
-        UpdateSignatureId( entity, SignatureId( GetSignature(entity) + signature ) );
+    void AddSignature(Entity entity, SignatureId signature_id) {
+        const Signature& signature = signatureManager.Get(signature_id);
+        ChangeSignature( entity, signatureManager.GetId(GetSignature(entity) + signature) );
     }
 
-    /*
-        This function is called internally when entities are created with new
-        signatures.  It can also be called up front to remove start up memory
-        allocations to get the vectors up to size for your game/level.
 
-        Signatures are stored in a vector and also a map that maps from
-        the signature value to where it is in the vector.
-    */
-    uint16_t SignatureId(const Signature& signature) {
-        uint16_t index;
-        std::map<Signature, uint16_t>::const_iterator it = signature_map.find(signature);
-        if (it == signature_map.end()) {
-            // if its not found, register a new one by putting it in the vector,
-            // and the signature map.
-            index = signatures.size();
-            signatures.push_back(signature);
-            signature_map[signature] = index;
-        } else {
-            // if we found it then just return the index it already
-            // exists int the vector
-            index = it->second;
-        }
-        return index;
+    SignatureId SigId(const Signature& signature) {
+        return signatureManager.GetId(signature);
     }
+
 
     void ChangeSignature(Entity entity, const Signature& signature) {
-        ChangeSignatureId( entity, SignatureId(signature) );
+        ChangeSignature( entity, signatureManager.GetId(signature) );
     }
 
     void RemoveSignature(Entity entity, const Signature& signature) {
-        ChangeSignatureId( entity, SignatureId( GetSignature(entity) - signature ) );
+        ChangeSignature( entity, signatureManager.GetId( GetSignature(entity) - signature ) );
     }
 
     void AddSignature(Entity entity, const Signature& signature) {
-        ChangeSignatureId( entity, SignatureId( GetSignature(entity) + signature ) );
+        ChangeSignature( entity, signatureManager.GetId( GetSignature(entity) + signature ) );
     }
 
+
     void DestroyEntity(Entity entity) {
-        ChangeSignature(entity, NullSignature);
+        ChangeSignature( entity, SignatureManager::Null() );
         entityManager.Destroy(entity);
     }
 
@@ -1129,7 +1131,7 @@ public:
         VectorMapHash& hash = entityManager.GetHash(entity.Tracked().index);
         r.entity = entity;
         r.hash = hash;
-        const Signature& signature = signatures[hash.signature];
+        const Signature& signature = signatureManager.Get(hash.signature);
         for (const auto& cid : signature) {
             r.begin()[cid] = pack.Any(cid).Get(r.hash);
         }
@@ -1144,7 +1146,7 @@ public:
         typename T::EntityRef r;
         r.entity = Entity();
         for ( const auto& kv : entityData ) {
-            if ( signatures[kv.first].Contains(for_sig) == true ) {
+            if ( signatureManager.Get(kv.first).Contains(for_sig) == true ) {
                 size = entityData.Size(kv.first);
                 r.hash.signature = kv.first;
                 r.hash.index = 0;
@@ -1166,7 +1168,7 @@ public:
         typename T::EntityRef r;
         r.entity = Entity();
         for ( const auto& kv : entityData ) {
-            if ( signatures[kv.first].Contains(for_sig) == true ) {
+            if ( signatureManager.Get(kv.first).Contains(for_sig) == true ) {
                 size = entityData.Size(kv.first);
                 r.hash.signature = kv.first;
                 r.hash.index = 0;
@@ -1211,8 +1213,7 @@ protected:
         SetRef<C2, Args...>(r);
     }
 
-    std::map<Signature, uint16_t> signature_map;
-    std::vector<Signature> signatures;
+    SignatureManager signatureManager;
 
     EntityManager entityManager;
 

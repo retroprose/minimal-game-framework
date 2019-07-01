@@ -264,7 +264,7 @@ int main()
 
         int r = rand()%100;
         if (r < 10) {
-            state.AddSignature(e, {Cp::RadarBlip});
+            state.AddSignature( e, {Cp::RadarBlip} );
         }
 
         auto eref = state.GetRef(e);
@@ -276,9 +276,7 @@ int main()
 
     }
 
-    //std::vector<BaseState::UpdateEntry> removebatch;
-    std::vector<UpdateEntry> removebatch;
-
+    std::vector<Cmd> cmdbatch;
 
     // This will be the main game loop
     while (window.isOpen())
@@ -293,30 +291,26 @@ int main()
             }
         }
 
-/*
-        removebatch.clear();
+        cmdbatch.clear();
         state.ForEach<Cp::Body>([&](Cp::EntityRef& r) {
             if (rand()%100  == 0) {
-                if (r.GetEntity() != playerEntity)
-                    //removebatch.push_back( r.GetEntity() );
-                    removebatch.push_back( state.Destroy(r.GetEntity()) );
+                if (r.GetEntity() != playerEntity) {
+                    cmdbatch.push_back( {r.GetEntity(), Cmd::Destroy} );
+                }
             }
         });
-        state.UpdateBatch(removebatch);
-*/
-        //for (int i = 0; i < removebatch.size(); ++i)
-        //    state.DestroyEntity(removebatch[i]);
+        state.Batch(cmdbatch);
 
 
 
         for (int i = 0; i < 10; i++) {
              auto e = state.Create();
 
-             state.ChangeSignature(e, {Cp::Body, Cp::Animator});
+             state.ChangeSignature( e, {Cp::Body, Cp::Animator});
 
             int r = rand()%100;
             if (r < 10) {
-                state.AddSignature(e, {Cp::RadarBlip});
+                state.AddSignature( e, {Cp::RadarBlip});
             }
 
             auto eref = state.GetRef(e);
@@ -367,9 +361,9 @@ int main()
                 playerRef.player->control.move = move;
 
                 if (sf::Keyboard::isKeyPressed(sf::Keyboard::K)) {
-                    state.AddSignature(playerEntity, {Cp::RadarBlip});
+                    state.AddSignature( playerEntity, {Cp::RadarBlip} );
                 } else if (sf::Keyboard::isKeyPressed(sf::Keyboard::L)) {
-                    state.RemoveSignature(playerEntity, {Cp::RadarBlip});
+                    state.RemoveSignature( playerEntity, {Cp::RadarBlip} );
                 }
             }
         }
