@@ -75,10 +75,16 @@ public:
     */
     template<uint8_t... Args>
     static Signature Gen() {
+        /*
+            You passed too many arguments to the template
+        */
         ASSERT(sizeof...(Args) < MaxComponents - 1);
         Signature s;
         SetElements<0, Args...>(s);
         std::sort(s.begin(), s.end());
+        /*
+            Your signature has duplicates
+        */
         ASSERT(!s.HasDuplicates());
         return s;
     }
@@ -95,6 +101,9 @@ public:
         the list is larger than MaxComponents -1 or there are any duplicates.
     */
     Signature(std::initializer_list<uint8_t> list) : _size(0) {
+        /*
+            You passed too many arguments to the constructor
+        */
         ASSERT(list.size() < MaxComponents - 1);
         Init();
         uint8_t* first = begin();
@@ -107,6 +116,9 @@ public:
             ++dest;
         }
         std::sort(first, dest);
+        /*
+            Your signature has duplicates
+        */
         ASSERT(!HasDuplicates());
     }
 
@@ -116,6 +128,11 @@ public:
     */
     Signature operator+(const Signature &rhs) const {
         const Signature& lhs = *this;
+        /*
+            The combination of these signatures exceeds the
+            maximum number of components a signature can
+            store.
+        */
         ASSERT(lhs.Size() + rhs.Size() < Signature::MaxComponents - 1);
         Signature ret;
         uint8_t *it = ret.begin();
@@ -203,6 +220,9 @@ public:
         we try to get an index out of range.
     */
     const uint8_t& operator[](int i) const {
+        /*
+            Your component index is out of range
+        */
         ASSERT(i >= 0 && i < MaxComponents);
         return begin()[i];
     }
@@ -363,21 +383,33 @@ public:
         dereference operations
     */
     T& operator *() {
+        /*
+            You tried to dereference a null reference!
+        */
         ASSERT( !IsNull() );
         return *ptr;
     }
 
     T* operator -> () {
+        /*
+            You tried to dereference a null reference!
+        */
         ASSERT( !IsNull() );
         return ptr;
     }
 
     const T& operator *() const {
+        /*
+            You tried to dereference a null reference!
+        */
         ASSERT( !IsNull() );
         return *ptr;
     }
 
     const T* operator -> () const {
+        /*
+            You tried to dereference a null reference!
+        */
         ASSERT( !IsNull() );
         return ptr;
     }
@@ -509,6 +541,10 @@ public:
         swaps it with component being moved)
     */
     void Move(VectorMapHash old_hash, SignatureId new_hash_signature) {
+        /*
+            Will assert if trying to move to and from move the same signature.
+            The function that uses this function guards against it.
+        */
         ASSERT(old_hash.signature != new_hash_signature);
         typename table_type::iterator old_sig = table.find(old_hash.signature);
         typename table_type::iterator new_sig = table.find(new_hash_signature);
@@ -667,6 +703,10 @@ public:
         This should never happen...
     */
     AnyVectorRef() {
+        /*
+            If this assert is called, it means a signature has a bad
+            component id in it.
+        */
         ASSERT(false);
     }
 
@@ -681,8 +721,17 @@ public:
     */
     template<typename T>
     AnyVectorRef(T& t) {
+        /*
+            The MaxBuffer isn't big enough to store an
+            instance of derived<T>
+        */
         ASSERT(sizeof(derived<T>) <= MaxBuffer);
         base* d = new (_buffer) derived<T>(t);
+        /*
+            Somehow due to compiler the base
+            class pointer doesn't point to the
+            beginning of the memory buffer.
+        */
         ASSERT(d - Base() == 0);
     }
 
@@ -743,6 +792,9 @@ public:
         though, if you only operate with SignatureIds though the manager
     */
     const Signature& Get(SignatureId signature) const {
+        /*
+            Signature id is out of range
+        */
         ASSERT(signature.Value() >= 0 && signature.Value() < signatures.size());
         return signatures[signature.Value()];
     }
@@ -870,12 +922,18 @@ public:
         free indices.
     */
     void Destroy(Entity entity) {
+        /*
+            Entity is untracked or invalid due to deletion.
+        */
         ASSERT(entity.Tracked().untracked == 0 && ginfo[entity.Tracked().index].generation == entity.Tracked().generation);
         if (ginfo[entity.Tracked().index].generation == 0x7fff) {
             /*
                 For debugging it's good to know if we hit the
                 end of a generation increment.  Otherwise we
                 can just let it turn over at our own risk...
+
+                If this happens, try using the Extend function
+                to get more active entities from the start.
             */
             ASSERT(false);
             /*ginfo[entity.Tracked().index].unsafe = 0;
@@ -915,6 +973,9 @@ public:
     }
 
     Entity FromIndex(uint16_t index) const {
+        /*
+            The entity index is out of range
+        */
         ASSERT(index < ginfo.size());
         Entity::tracked_t entity;
         entity.index = index;
@@ -1059,6 +1120,9 @@ public:
         Gets the signature of a given entity.
     */
     const Signature& GetSignature(Entity entity) const {
+        /*
+            Entity is untracked or invalid
+        */
         ASSERT(entity.Tracked().untracked == 0 && Valid(entity) == true);
         return signatureManager.Get( entityManager.GetHash(entity.Tracked().index).signature );
     }
@@ -1081,6 +1145,9 @@ public:
         This function asserts if the entity is untracked or invalid.
     */
     void ChangeSignature(Entity entity, SignatureId signature_id) {
+        /*
+            Entity is untracked or invalid
+        */
         ASSERT(entity.Tracked().untracked == 0 && Valid(entity) == true);
         VectorMapHash old_hash = entityManager.GetHash(entity.Tracked().index); // gets the current hash of the entity
         VectorMapHash new_hash;
@@ -1182,7 +1249,10 @@ public:
         that will reference all of the components.
     */
     typename T::EntityRef GetRef(Entity entity) {
-        ASSERT(Valid(entity) == true);
+        /*
+            Entity is untracked or invalid
+        */
+        ASSERT(entity.Tracked().untracked == 0 && Valid(entity) == true);
         typename T::EntityRef r;
         VectorMapHash& hash = entityManager.GetHash(entity.Tracked().index);
         r.entity = entity;
@@ -1200,7 +1270,10 @@ public:
     */
     template<uint8_t... Args>
     typename T::EntityRef GetRef(Entity entity) {
-        ASSERT(Valid(entity) == true);
+        /*
+            Entity is untracked or invalid
+        */
+        ASSERT(entity.Tracked().untracked == 0 && Valid(entity) == true);
         typename T::EntityRef r;
         VectorMapHash& hash = entityManager.GetHash(entity.Tracked().index);
         r.entity = entity;
