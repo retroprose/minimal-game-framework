@@ -299,7 +299,7 @@ int main()
     }
 
     // the command batch array
-    std::vector<Cmd> cmdbatch;
+    Vector<Cmd> cmdbatch;
 
     // This will be the main game loop
     while (window.isOpen())
@@ -319,13 +319,13 @@ int main()
             Here we aren't using 'ForEachFast' because we access the
             entity value.
         */
-        cmdbatch.clear();
+        cmdbatch.Clear();
         state.ForEach<Cp::Body>([&](Cp::EntityRef& r) {
             // don't delete the player!
             if (r.GetEntity() != playerEntity) {
                 // every moving entity has a chance of being deleted
                 if (rand()%100  == 0) {
-                    cmdbatch.push_back( {r.GetEntity(), Cmd::Destroy} );
+                    cmdbatch.Add( {r.GetEntity(), Cmd::Destroy} );
                 }
             }
         });

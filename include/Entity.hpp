@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <initializer_list>
 
-#include <Error.hpp>
+#include <Container.hpp>
 
 /*
     Classes that appear in this file:
@@ -1082,8 +1082,8 @@ public:
     /*
         Runs a batch of commands on the entities.
     */
-    void Batch(std::vector<Cmd>& list) {
-        for (size_t i = 0; i < list.size(); ++i) {
+    void Batch(Vector<Cmd>& list) {
+        for (size_t i = 0; i < list.Size(); ++i) {
             Cmd& entry = list[i];
             switch(entry.update.type) {
             case Cmd::Add:      AddSignature(entry.entity, entry.signature);    break;
