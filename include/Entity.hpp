@@ -1,11 +1,61 @@
 #ifndef ENTITY_HPP
 #define ENTITY_HPP
 
+#include <iostream>
+#include <fstream>
+#include <typeinfo>
 
 #include <Container.hpp>
 
 
 /*
+
+    template<class... Ts>
+    void doStuff(std::tuple<Ts...> const& tupOfCtr { ... }
+
+    template<class... Ts>
+    void doStuff(std::tuple<Ts...> const& tupOfCtr {
+        using value_tuple = std::tuple<typename Ts::value_type...>;
+    }
+
+
+
+
+
+    #include <iostream>
+    #include <tuple>
+
+    using namespace std;
+
+    template<int index, typename... Ts>
+    struct print_tuple {
+        void operator() (tuple<Ts...>& t) {
+            cout << get<index>(t) << " ";
+            print_tuple<index - 1, Ts...>{}(t);
+        }
+    };
+
+    template<typename... Ts>
+    struct print_tuple<0, Ts...> {
+        void operator() (tuple<Ts...>& t) {
+            cout << get<0>(t) << " ";
+        }
+    };
+
+    template<typename... Ts>
+    void print(tuple<Ts...>& t) {
+        const auto size = tuple_size<tuple<Ts...>>::value;
+        print_tuple<size - 1, Ts...>{}(t);
+    }
+
+    int main() {
+        auto t = make_tuple(1, 2, "abc", "def", 4.0f);
+        print(t);
+
+        return 0;
+    }
+
+
 
     uint16_t head;
     uint16_t tail;
@@ -35,6 +85,7 @@
 
 */
 
+template<typename ... Args>
 class BaseState;
 
 class Signature {
@@ -153,6 +204,7 @@ public:
     }
 
 private:
+    template<typename ... Args>
     friend class BaseState;
 
     struct Untracked {
@@ -241,6 +293,8 @@ private:
     table_type table;
 
 public:
+    using value_type = T;
+
     size_t size(Signature signature) const {
         size_t s = 0;
         typename table_type::const_iterator it = table.find(signature);
@@ -368,6 +422,8 @@ private:
     table_type table;
 
 public:
+    using value_type = T;
+
     size_t size() const {
         return table.size();
     }
@@ -462,7 +518,7 @@ public:
 
 
 
-
+template<typename... Ts>
 class BaseState {
 public:
     BaseState() : head(EndOfList), tail(EndOfList) { }
@@ -547,7 +603,7 @@ public:
 
         newHash.signature = signature;
 
-        std::map<Signature, FreeInfo>::iterator newInfo = freeMap.find(newHash.signature);
+        typename std::map<Signature, FreeInfo>::iterator newInfo = freeMap.find(newHash.signature);
         if (newInfo == freeMap.end()) {
             newHash.index = 0;
             if (newHash.signature != Signature::Null()) {
@@ -566,7 +622,7 @@ public:
             }
         }
 
-        std::map<Signature, FreeInfo>::iterator oldInfo = freeMap.find(oldHash.signature);
+        typename std::map<Signature, FreeInfo>::iterator oldInfo = freeMap.find(oldHash.signature);
         if (oldInfo != freeMap.end()) {
             activeData.set(oldHash, false);
             *entityData.get(oldHash) = oldInfo->second.head;
@@ -620,7 +676,30 @@ public:
         }
     }
 
+    using pack_type = std::tuple<Ts...>;
+    using tuple_type = std::tuple<typename Ts::value_type...>;
 
+
+    template<uint32_t index, bool dummy>
+    struct print_tuple {
+        void operator() () {
+        //void operator() (tuple<Ts...>& t) {
+            std::cout << typeid(typename std::tuple_element<index, tuple_type>::type).name() << std::endl;
+            print_tuple<index + 1, dummy>()();
+        }
+    };
+
+    template<bool dummy>
+    struct print_tuple<std::tuple_size<tuple_type>::value - 1, dummy> {
+        void operator() () {
+            std::cout << typeid(typename std::tuple_element<std::tuple_size<tuple_type>::value - 1, tuple_type>::type).name() << std::endl;
+        }
+    };
+
+
+    void print_things() {
+        print_tuple<0, false>()();
+    }
 
 protected:
     constexpr static uint16_t EndOfList = 0xffff;
@@ -646,8 +725,8 @@ protected:
     VectorMap<bool>     activeData;
 
 
+    pack_type pack;
 };
-
 
 
 

@@ -11,29 +11,30 @@
 #include<fstream>
 
 
+struct Cp {
+    struct Body {
+        Vector2 position;
+        Vector2 velocity;
+        Real radius;
+    };
 
 
-struct Body {
-	Vector2 position;
-	Vector2 velocity;
-	Real radius;
-};
+    struct Color {
+        Color() { }
+        Color(Real r_, Real g_, Real b_, Real a_) : r(r_), g(g_), b(b_), a(a_) { }
+        Color(Real r_, Real g_, Real b_) : r(r_), g(g_), b(b_), a(1.0f) { }
+        Real r;
+        Real g;
+        Real b;
+        Real a;
+    };
 
 
-struct Color {
-    Color() { }
-    Color(Real r_, Real g_, Real b_, Real a_) : r(r_), g(g_), b(b_), a(a_) { }
-    Color(Real r_, Real g_, Real b_) : r(r_), g(g_), b(b_), a(1.0f) { }
-    Real r;
-    Real g;
-    Real b;
-    Real a;
-};
+    struct Controller {
+        Vector2 cursor;
+        Vector2 move;
+    };
 
-
-struct Controller {
-    Vector2 cursor;
-	Vector2 move;
 };
 
 /*
@@ -55,54 +56,125 @@ struct Controller {
         EntityMap<Color>
     > state;
 
+
+    log2(n & -n) + 1
+
+    0000
+
+    int -> bit    (0x0001 << int)
+
+    0001    1   0   0000
+
+    0010    3   1   0001
+
+    0100    5   2   0010
+
+    1000    7   3   0011
+
+
 */
 
+
+template<uint8_t ... Values>
+class bits {
+private:
+    template<uint8_t C>
+    constexpr static uint32_t set() {
+        return (0x000000001 << C);
+    }
+
+    template<uint8_t C1, uint8_t C2, uint8_t ... Args>
+    constexpr static uint32_t set() {
+        return (0x000000001 << C1) | set<C2, Args...>();
+    }
+
+public:
+    constexpr static const uint32_t value = set<Values...>();
+
+};
+
+
+void print_bits(uint32_t bits) {
+    uint32_t mask = 0x80000000;
+    for (int i = 0; i < 32; i++) {
+        if (mask & bits)
+            std::cout << "1";
+        else
+            std::cout << "0";
+        mask = mask >> 1;
+    }
+    std::cout << std::endl;
+}
+
+enum CpType : uint8_t {
+    Body = 0,
+    Color,
+    Controller,
+    HatColor
+};
+
+using MyState = BaseState<
+    VectorMap<Cp::Body>,
+    VectorMap<Cp::Color>,
+    EntityMap<Cp::Controller>,
+    EntityMap<Cp::Color>
+>;
+
+template<typename T>
+struct test_single_ref {
+    T* t;
+};
+
+template<typename T, uint8_t ... Args>
+struct test_ref {
+
+    using tuple_type = std::tuple<test_single_ref<typename std::tuple_element<Args, typename T::tuple_type>::type>...>;
+
+    test_ref(T& t) {
+
+    }
+
+    template<uint8_t index>
+    typename std::tuple_element<index, tuple_type>::type& get() {
+        return std::get<index>(refs);
+    }
+
+    tuple_type refs;
+};
+
+
+template<uint8_t ... Args, typename T>
+test_ref<T, Args...> make_test_ref(T& t) {
+    return test_ref<T, Args...>(t);
+}
 
 /*
-struct Cp {
-
-    enum etype : uint8_t {
-        Controller = 0,
-        Body,
-        Color,
-        HatColor,
-        _ComponentCount
-    };
 
 
-    using type_table = std::tuple<
-        ::Controller,
-        ::Body,
-        ::Color,
-        ::Color
-    >;
+
+    struct pretty_ref {
+        static buffer_[] // zeroed out  memory
 
 
-    struct EntityRef : public BaseEntityRef {
-        Ref<::Controller> controller;
-        Ref<::Body> body;
-        Ref<::Color> color;
-        Ref<::Color> hatColor;
-    };
 
 
-    VectorMap<::Controller> controllerData;
-    VectorMap<::Body> bodyData;
-    VectorMap<::Color> colorData;
-    VectorMap<::Color> hatColorData;
-
-
-    AnyVectorRef Any(uint32_t component_id) {
-        switch(component_id) {
-        case Controller:        return AnyVectorRef(controllerData);
-        case Body:              return AnyVectorRef(bodyData);
-        case Color:             return AnyVectorRef(colorData);
-        case HatColor:          return AnyVectorRef(hatColorData);
-        default:                return AnyVectorRef();
-        }
     }
-};
-*/
+
+
+    ref.nullify();
+
+    for ( auto std::tie(body, color) : state.foreach<Body, Color>() ) {
+
+    }
+
+    for ( auto tup : state.foreach<Body, Color>() ) {
+        std::tie(ref.body, ref.color) = tup;
+
+        // DO STUFF!
+
+    }
+
+
 
 
 
@@ -210,243 +282,130 @@ private:
     EntityMap<::Color> hatColorData;
 
 };
+*/
 
 
-/*
-class Signature {
-public:
-    constexpr static Signature Null() { return Signature(); }
-
-    constexpr Signature() : value_(0) { }
-    Signature(uint16_t value) : value_(value) { }
-
-    Signature(std::initializer_list<uint8_t> list) : value_(0) {
-        for (auto& cp : list)
-            value_ |= 0x0001 << cp;
+template<uint32_t index, typename T>
+struct print_ref {
+    void operator() () {
+    //void operator() (tuple<Ts...>& t) {
+        std::cout << index << ": " << typeid(typename std::tuple_element<index, typename T::tuple_type>::type).name() << std::endl;
+        print_ref<index - 1, T>()();
     }
-
-    bool operator< (const Signature& rhs) const { return value_ <  rhs.value_; }
-    bool operator==(const Signature& rhs) const { return value_ == rhs.value_; }
-    bool operator!=(const Signature& rhs) const { return value_ != rhs.value_; }
-
-    Signature operator+(const Signature& rhs) const { return value_ | rhs.value_; }
-    Signature operator-(const Signature& rhs) const { return value_ & ~rhs.value_; }
-
-    Signature& operator+=(const Signature& rhs) {
-        value_ |= rhs.value_;
-        return *this;
-    }
-
-    Signature& operator-=(const Signature& rhs) {
-        value_ &= ~rhs.value_;
-        return *this;
-    }
-
-    bool has(uint8_t component) const {
-        uint16_t mask = 0x0001 << component;
-        return ((value_ & mask) == mask);
-    }
-
-    bool contains(const Signature& rhs) const {
-        return ((value_ & rhs.value_) == rhs.value_);
-    }
-
-    const uint16_t& value() const { return value_; }
-
-private:
-    uint16_t value_;
-
-};
-
-
-struct EntityHash {
-    EntityHash() : signature(), index(0) { }
-    EntityHash(Signature s, uint16_t i) : signature(s), index(i) { }
-    Signature signature;
-    uint16_t index;
-};
-
-
-template<typename T>
-class VectorMap {
-public:
-    using pair_type = std::pair<Signature, std::vector<T>>;
-
-    using table_type = std::map<Signature, std::vector<T>>;
-
-    size_t size(Signature signature) const {
-        size_t s = 0;
-        typename table_type::const_iterator it = table.find(signature);
-        if (it != table.end()) {
-            s = it->second.size();
-        }
-        return s;
-    }
-
-    bool hasHash(EntityHash hash) const {
-        bool has = true;
-        typename table_type::const_iterator it = table.find(hash.signature);
-        if (it == table.end() || hash.index >= it->second.size())
-            has = false;
-        return has;
-    }
-
-
-
-    typename table_type::iterator begin() {
-        return table.begin();
-    }
-
-    typename table_type::iterator end() {
-        return table.end();
-    }
-
-    void move(EntityHash oldHash, EntityHash newHash) {
-        typename table_type::iterator newSig = table.find(newHash.signature);
-        if (newSig == table.end()) {
-            if (newHash.signature == Signature::Null()) return;
-            auto ret = table.insert(pair_type(newHash.signature, std::vector<T>()));
-            newSig = ret.first;
-        }
-
-        if (newSig->second.size() <= newHash.index) {
-            newSig->second.resize(newHash.index + 1);
-        }
-
-        typename table_type::iterator oldSig = table.find(oldHash.signature);
-
-        if (oldSig != table.end()) {
-            std::swap(oldSig->second[oldHash.index], newSig->second[newHash.index]);
-        }
-    }
-
-    void add_value(Signature k, T t) {
-        table[k].push_back(t);
-    }
-
-    void add_map(Signature k) {
-        table[k] = std::vector<T>();
-    }
-
-    void print_out() {
-        std::ofstream os("dump.txt");
-        for (auto& kv : table) {
-            os << "key: " << kv.first.value() << std::endl;
-            for (int i = 0; i < kv.second.size(); ++i) {
-                os << "\tarray: " << kv.second[i] << std::endl;
-            }
-        }
-        os.close();
-    }
-
-
-private:
-    table_type table;
-
 };
 
 template<typename T>
-class ProxyVectorMap {
-private:
-    VectorMap<T>& table;
-    Signature signature_;
-
-public:
-    ProxyVectorMap(VectorMap<T>& t, Signature signature) : table(t), signature_(signature) { }
-
-    struct return_stuff {
-        return_stuff(const Signature s, T& t) : signature(s), thing(t) { }
-        Signature signature;
-        T& thing;
-    };
-
-    struct iterator {
-        typename VectorMap<T>::table_type::iterator tb;
-        typename VectorMap<T>::table_type::iterator te;
-        typename std::vector<T>::iterator vb;
-        typename std::vector<T>::iterator ve;
-        Signature signature;
-
-        const Signature& get_sig() {
-            return tb->first;
-        }
-
-        return_stuff operator*() {
-            return return_stuff(tb->first, *vb);
-        }
-
-        //T& operator *() {
-        //    return *vb;
-        //}
-
-        bool operator!=(const iterator& rhs) const {
-            return tb != rhs.tb;
-        }
-
-         // overloaded prefix ++ operator
-        // Define prefix decrement operator.
-        iterator& operator++() {
-           ++vb;
-           if (vb == ve) {
-                ++tb;
-                // need logic here to skip over signatures
-                // while tb doent contain and tb != te
-                while ( tb != te && !signature.contains(tb->first) ) {
-                    ++tb;
-                }
-                if (tb == te) {
-                    vb = typename std::vector<T>::iterator();
-                    ve = typename std::vector<T>::iterator();
-                } else {
-                    vb = tb->second.begin();
-                    ve = tb->second.end();
-                }
-           }
-           return *this;
-        }
-
-    };
-
-    iterator begin() {
-        iterator it;
-        it.signature = signature_;
-        it.tb = table.begin();
-        it.te = table.end();
-        while ( it.tb != it.te && !it.signature.contains(it.tb->first) ) {
-            ++(it.tb);
-        }
-        if (it.tb != it.te) {
-            it.vb = it.tb->second.begin();
-            it.ve = it.tb->second.end();
-        } else {
-            it.vb = typename std::vector<T>::iterator();
-            it.ve = typename std::vector<T>::iterator();
-        }
-        return it;
+struct print_ref<0, T> {
+    void operator() () {
+        std::cout << 0 << ": " << typeid(typename std::tuple_element<0, typename T::tuple_type>::type).name() << std::endl;
     }
-
-    iterator end() {
-        iterator it;
-        it.signature = signature_;
-        it.tb = table.end();
-        it.te = table.end();
-        it.vb = typename std::vector<T>::iterator();
-        it.ve = typename std::vector<T>::iterator();
-        return it;
-    }
-
-
-
 };
 
-template<typename U>
-static ProxyVectorMap<U> Gen(VectorMap<U>& t, const Signature& s) {
-    return ProxyVectorMap<U>(t, s);
+template<typename T>
+void print_ref_() {
+    print_ref<std::tuple_size<typename T::tuple_type>::value - 1, T>()();
 }
 
 
-#include<iostream>
-*/
+template<typename T>
+struct TestRef {
+    T* t;
+};
+
+
+template<typename... Ts>
+struct TestState {
+    using pack_type = std::tuple<Ts...>;
+    using tuple_type = std::tuple<typename Ts::value_type...>;
+
+	using tuple_ref_type = std::tuple<TestRef<typename Ts::value_type>...>;
+
+    struct iterator {
+        //using tuple_it_type = std::tuple<typename std::tuple_element<Ts, typename T::pack_type>::iterator...>;
+		using tuple_it_type = std::tuple<typename Ts::iterator...>;
+        tuple_it_type it_pack;
+
+		bool operator!=(const iterator& rhs) const {
+			return std::get<0>(it_pack) != std::get<0>(rhs.it_pack);
+		}
+
+		tuple_ref_type operator*() {
+			tuple_ref_type ref;
+			operate<0, false>::setRef(it_pack, ref);
+			return ref;
+		}
+
+        iterator& operator++() {
+			operate<0, false>::increment(it_pack);
+            return *this;
+        }
+
+		void setBegin(pack_type& pack) {
+			operate<0, false>::setBegin(it_pack, pack);
+		}
+
+		void setEnd(pack_type& pack) {
+			operate<0, false>::setEnd(it_pack, pack);
+		}
+
+        template<uint32_t index, bool dummy>
+        struct operate {
+			static void setRef(tuple_it_type& it_pack, tuple_ref_type& ref) {
+				std::get<index>(ref).t = &(*std::get<index>(it_pack));
+                operate<index + 1, dummy>::setRef(it_pack, ref);
+			}
+			static void setBegin(tuple_it_type& s_it_pack, pack_type& pack) {
+				std::get<index>(s_it_pack) = std::get<index>(pack).begin();
+                operate<index + 1, dummy>::setBegin(s_it_pack, pack);
+			}
+			static void setEnd(tuple_it_type& s_it_pack, pack_type& pack) {
+				std::get<index>(s_it_pack) = std::get<index>(pack).end();
+                operate<index + 1, dummy>::setEnd(s_it_pack, pack);
+			}
+            static void increment(tuple_it_type& s_it_pack) {
+				++std::get<index>(s_it_pack);
+                operate<index + 1, dummy>::increment(s_it_pack);
+            }
+        };
+
+		constexpr static const uint32_t it_pack_size = std::tuple_size<tuple_type>::value;
+
+        template<bool dummy>
+        struct operate<it_pack_size - 1, dummy> {
+			constexpr static const uint32_t index = it_pack_size - 1;
+			static void setRef(tuple_it_type& it_pack, tuple_ref_type& ref) {
+				std::get<index>(ref).t = &(*std::get<index>(it_pack));
+			}
+			static void setBegin(tuple_it_type& it_pack, pack_type& pack) {
+				std::get<index>(it_pack) = std::get<index>(pack).begin();
+			}
+			static void setEnd(tuple_it_type& it_pack, pack_type& pack) {
+				std::get<index>(it_pack) = std::get<index>(pack).end();
+			}
+			static void increment (tuple_it_type& it_pack) {
+				++std::get<index>(it_pack);
+            }
+        };
+
+    };
+
+	iterator begin() {
+		iterator it;
+		it.setBegin(pack);
+		return it;
+	}
+
+	iterator end() {
+		iterator it;
+		it.setEnd(pack);
+		return it;
+	}
+
+    pack_type pack;
+};
+
+
+
 
 
 ////////////////////////////////////////////////////////////
@@ -457,52 +416,6 @@ static ProxyVectorMap<U> Gen(VectorMap<U>& t, const Signature& s) {
 ////////////////////////////////////////////////////////////
 int main()
 {
-/*
-    uint16_t mask_table[] = {
-        0x0ff0,
-        0xa0f0,
-        0x0f00,
-        0xe0f0,
-        0x00f0
-    };
-
-
-    uint16_t mask_table[] = {
-        0,
-        1,
-        2,
-        3,
-        4
-    };
-
-
-    VectorMap<uint32_t> vm;
-    for (int j = 0; j < 5; ++j) {
-        uint16_t mask = mask_table[j];
-        vm.add_map(mask);
-        for (int i = 0; i < 10; ++i) {
-            vm.add_value(j, i);
-        }
-    }
-    vm.print_out();
-
-    VectorMap<uint32_t>::iterator it = vm.begin();
-    while (it != vm.end()) {
-        std::cout << it.get_sig().value << ": " << *it << std::endl;
-        ++it;
-    }
-
-
-    //for ( auto& value : Gen(vm, 2) ) {
-    //    std::cout << value << std::endl;
-    //}
-
-    for ( auto value : Gen(vm, 0x00f0) ) {
-    //for ( auto value : Gen(vm, 2) ) {
-        std::cout << value.signature.value() << ": " << value.thing << std::endl;
-    }
-*/
-
 
     // Define some constants
     const int gameWidth = 800;
@@ -546,7 +459,48 @@ int main()
     message.setString("Use WASD to move, mouse to move cursor.\nLeft and right mouse button adds and\nRemoves player's hat.");
 
 
+	TestState<
+		std::vector<int>,
+		std::vector<float>
+	> state;
 
+	auto& iv = std::get<0>(state.pack);
+	auto& fv = std::get<1>(state.pack);
+
+	for (int i = 0; i < 10; i++) {
+		iv.push_back(i);
+		fv.push_back((float)i * 0.01f);
+	}
+
+	TestRef<int> ir;
+	TestRef<float> fr;
+
+	//for (auto ref : state) {
+	//	std::cout << *(std::get<0>(ref).t) << ", ";
+	//	std::cout << *(std::get<1>(ref).t) << std::endl;
+	//}
+
+    for (auto ref : state) {
+        std::tie(ir, fr) = ref;
+		std::cout << *(ir.t) << ", ";
+		std::cout << *(fr.t) << std::endl;
+	}
+
+	//for (std::tie(ir, fr) : state) {
+	//	std::cout << *(ir.t) << ", ";
+	//	std::cout << *(fr.t) << std::endl;
+	//}
+
+    //MyState state;
+
+    //state.print_things();
+
+    //auto test = make_test_ref<Color, HatColor, Body>(state);
+
+    //print_ref_<test_ref<MyState, Color, HatColor, Body>>();
+
+
+/*
     State::EntityRef ref;
 
     State state;
@@ -596,6 +550,7 @@ int main()
 
         state.setActive(e, true);
     }
+*/
 
 
     // This will be the main game loop
@@ -612,7 +567,7 @@ int main()
         }
 
 
-
+/*
         state.ForEach({State::Body}, [&](EntityHash hash) {
             ref.entity = state.getEntity(hash);
             if (ref.entity != playerEntity) {
@@ -653,7 +608,7 @@ int main()
 
             state.setActive(e, true);
         }
-
+*/
 
 
         // convert the sfml vector to our math vector
@@ -670,7 +625,7 @@ int main()
         move.Normalize();
 
 
-
+/*
         // check to make sure playerEntity is still valid
         if (state.valid(playerEntity) == true) {
 
@@ -708,7 +663,7 @@ int main()
             ref.body = state.body(hash);
             ref.body->position += ref.body->velocity;
         });
-
+*/
 
 
         // Rendering code
@@ -717,7 +672,7 @@ int main()
 
 
 
-
+/*
         // This will draw all of the entities.
         state.ForEach( {State::Body, State::Color}, [&](EntityHash hash) {
             ref.body = state.body(hash);
@@ -750,7 +705,7 @@ int main()
             circle.setOrigin(0, 0);
             window.draw(circle);
         }
-
+*/
 
         // draw cursor
         circle.setFillColor(sf::Color::White);
