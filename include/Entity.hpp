@@ -1,9 +1,6 @@
 #ifndef ENTITY_HPP
 #define ENTITY_HPP
 
-#include <iostream>
-#include <fstream>
-#include <typeinfo>
 
 #include <Container.hpp>
 
@@ -85,158 +82,481 @@
 
 */
 
-template<typename ... Args>
-class BaseState;
+class Signature;
+class SignatureManager;
+
 
 class Signature {
 public:
-    constexpr static Signature Null() { return Signature(); }
+    class Id {
+    private:
+        friend class Signature;
+        friend class SignatureManager;
 
-    constexpr Signature() : value_(0) { }
-    Signature(uint16_t value) : value_(value) { }
+        struct Creator {
+            constexpr Creator(uint16_t v) : value_(v) { }
+            uint16_t value_;
+        };
 
-    Signature(std::initializer_list<uint8_t> list) : value_(0) {
-        ASSERT(list.size() < 16);
-        for (auto& cp : list)
-            value_ |= 0x0001 << cp;
+        constexpr Id(const Creator& c) : value_(c.value_) { }
+
+        uint16_t value_;
+
+    public:
+        constexpr Id() : value_(0) { }
+
+        bool operator< (const Id& rhs) const { return value_ <  rhs.value_; }
+        bool operator==(const Id& rhs) const { return value_ == rhs.value_; }
+        bool operator!=(const Id& rhs) const { return value_ != rhs.value_; }
+
+        uint16_t value() const {
+            return value_;
+        }
+
+    };
+
+    constexpr static const uint8_t MaxComponents = 4 * 8; // 32
+    constexpr static const uint8_t Max32Bit = MaxComponents / 4;
+    constexpr static const uint8_t NullIndex = 0xff;
+    constexpr static const uint8_t NullCp = 0xff;
+
+    template<uint8_t... Args>
+    static Signature make() {
+        ASSERT(sizeof...(Args) < MaxComponents - 1);
+        Signature s;
+        setElements<0, Args...>(s);
+        std::sort(s.begin(), s.end());
+        ASSERT(!s.hasDuplicates());
+        return s;
     }
 
-    bool operator< (const Signature& rhs) const { return value_ <  rhs.value_; }
-    bool operator==(const Signature& rhs) const { return value_ == rhs.value_; }
-    bool operator!=(const Signature& rhs) const { return value_ != rhs.value_; }
-
-    Signature operator+(const Signature& rhs) const { return value_ | rhs.value_; }
-    Signature operator-(const Signature& rhs) const { return value_ & ~rhs.value_; }
-
-    Signature& operator+=(const Signature& rhs) {
-        value_ |= rhs.value_;
-        return *this;
+    Signature() : size_(0) {
+        init();
     }
 
-    Signature& operator-=(const Signature& rhs) {
-        value_ &= ~rhs.value_;
-        return *this;
+    Signature(std::initializer_list<uint8_t> list) : size_(0) {
+        ASSERT(list.size() < MaxComponents - 1);
+        init();
+        size_ = list.size();
+        const uint8_t* src = list.begin();
+        uint8_t* dest = begin();
+        for (;;) {
+            if (src == list.end()) break;
+            *dest = *src;
+            ++src;
+            ++dest;
+        }
+        std::sort(begin(), end());
+        ASSERT(!hasDuplicates());
     }
 
-    bool has(uint8_t component) const {
-        uint16_t mask = 0x0001 << component;
-        return ((value_ & mask) == mask);
+    Signature operator+(const Signature &rhs) const {
+        const Signature& lhs = *this;
+        ASSERT(lhs.size() + rhs.size() < MaxComponents - 1);
+        Signature ret;
+        uint8_t *it = ret.begin();
+        const uint8_t *it_lhs = lhs.begin(), *it_rhs = rhs.begin();
+        for(;;) {
+            if ( *it_lhs == *it_rhs ) {
+                if (*it_lhs == NullCp) return ret;
+                *it = *it_lhs;
+                ++it;
+                ++ret.size_;
+                ++it_rhs;
+                ++it_lhs;
+            } else if ( *it_lhs < *it_rhs ) {
+                *it = *it_lhs;
+                ++it;
+                ++ret.size_;
+                ++it_lhs;
+            } else {
+                *it = *it_rhs;
+                ++it;
+                ++ret.size_;
+                ++it_rhs;
+            }
+        }
+    }
+
+    Signature operator-(const Signature &rhs) const {
+        const Signature& lhs = *this;
+        Signature ret;
+        uint8_t *it = ret.begin();
+        const uint8_t *it_lhs = lhs.begin(), *it_rhs = rhs.begin();
+        for(;;) {
+            if ( *it_lhs == *it_rhs ) {
+                if (*it_lhs == NullCp) return ret;
+                ++it_rhs;
+                ++it_lhs;
+            } else if ( *it_lhs < *it_rhs ) {
+                *it = *it_lhs;
+                ++it;
+                ++ret.size_;
+                ++it_lhs;
+            } else {
+                ++it_rhs;
+            }
+        }
+    }
+
+    bool operator<(const Signature& rhs) const {
+        const uint32_t* la = reinterpret_cast<const uint32_t*>(components);
+        const uint32_t* ra = reinterpret_cast<const uint32_t*>(rhs.components);
+        uint8_t i = 0;
+        while (*la == *ra && i < Max32Bit - 1) {
+            ++la;
+            ++ra;
+            ++i;
+        }
+        return *la < *ra;
+    }
+
+    bool operator==(const Signature& rhs) const {
+        const uint32_t* la = reinterpret_cast<const uint32_t*>(components);
+        const uint32_t* ra = reinterpret_cast<const uint32_t*>(rhs.components);
+        uint8_t i = 0;
+        while (*la == *ra && i < Max32Bit) {
+            ++la;
+            ++ra;
+            ++i;
+        }
+        return i == Max32Bit;
+    }
+
+    bool operator!=(const Signature& rhs) const {
+        return !(*this == rhs);
+    }
+
+
+    const uint8_t* begin() const {
+        return components;
+    }
+
+    const uint8_t* end() const {
+        return components + size_;
+    }
+
+    const uint8_t& operator[](int i) const {
+        ASSERT(i >= 0 && i < MaxComponents);
+        return components[i];
+    }
+
+    uint8_t getIndexOf(uint8_t k) const {
+        const uint8_t* it = begin();
+        uint8_t i = 0;
+        for(;;) {
+            if (*it == NullCp) return NullIndex;
+            if (*it == k) return i;
+            ++it;
+            ++i;
+        }
+    }
+
+    bool gas(uint8_t k) const {
+        return (getIndexOf(k) != NullIndex);
     }
 
     bool contains(const Signature& rhs) const {
-        return ((value_ & rhs.value_) == rhs.value_);
-    }
-
-    const uint16_t& value() const { return value_; }
-
-private:
-    uint16_t value_;
-
-};
-
-class ComponentList {
-public:
-    ComponentList(const Signature& signature) {
-        Init(signature, 0);
-    }
-
-    ComponentList(const Signature& signature, uint32_t offset) {
-        Init(signature, offset);
-    }
-
-    void Init(const Signature& signature, uint32_t offset) {
-        uint8_t index = 0;
-        uint16_t mask = 0x0001;
-        for (uint8_t i = 0; i < 16; ++i){
-            if (mask & signature.value()) {
-                components_[index] = i + offset;
-                ++index;
-            }
-            mask = mask << 1;
+        const uint8_t *it_lhs = begin(), *it_rhs = rhs.begin();
+         for(;;) {
+            if ( *it_rhs == NullCp ) return true;
+            if ( *it_lhs == NullCp ) return false;
+            if ( *it_lhs == *it_rhs ) ++it_rhs;
+            ++it_lhs;
         }
-        components_[index] = 0xff;
-        size_ = index;
     }
 
-    const uint8_t* begin() const { return components_; }
-    const uint8_t* end() const { return components_ + size_; }
-
-    const uint8_t& operator[](uint8_t index) const { return components_[index]; }
+    uint8_t size() const {
+        return size_;
+    }
 
 private:
-    uint8_t components_[17];
+    template<uint16_t INDEX, uint8_t C>
+    static void setElements(Signature& s) {
+        s.begin()[INDEX] = C;
+        ++s.size_;
+    }
+
+    template<uint16_t INDEX, uint8_t C1, uint8_t C2, uint8_t ... Args>
+    static void setElements(Signature& s) {
+        s.begin()[INDEX] = C1;
+        ++s.size_;
+        setElements<INDEX + 1, C2, Args...>(s);
+    }
+
+    void init() {
+        for (uint8_t* it = begin(); it != begin() + MaxComponents; ++it) {
+            *it = 0xff;
+        }
+    }
+
+    uint8_t* begin() {
+        return components;
+    }
+
+    uint8_t* end() {
+        return components + size_;
+    }
+
+    bool hasDuplicates() const {
+        const uint8_t* it = begin();
+        for(;;) {
+            if (*it == NullCp) return false;
+            if (*it == *(it + 1)) return true;
+            ++it;
+        }
+    }
+
+    uint8_t components[MaxComponents];
     uint8_t size_;
 
 };
 
 
-
-class Entity {
+class SignatureManager {
 public:
-    Entity() { data_.raw.value = 0x00000000; }
-
-    bool operator< (const Entity& rhs) const { return data_.raw.value <  rhs.data_.raw.value; }
-    bool operator==(const Entity& rhs) const { return data_.raw.value == rhs.data_.raw.value; }
-    bool operator!=(const Entity& rhs) const { return data_.raw.value != rhs.data_.raw.value; }
-
-    bool untracked() const {
-        return data_.tracked.untracked;
+    SignatureManager(const Signature& dynamicSignature) {
+        // initialize utility signatures
+        signatures.push_back( SignatureInfo(Signature(), Signature::Id::Creator(0)) );
+        signatures.push_back( SignatureInfo(dynamicSignature, Signature::Id::Creator(0)) );
+        signature_map[signatures[0].signature] = Signature::Id(Signature::Id::Creator(0));
+        signature_map[signatures[1].signature] = Signature::Id(Signature::Id::Creator(1));
     }
 
-    uint16_t index() const {
-        ASSERT(data_.tracked.untracked == 0);
-        return data_.tracked.index;
+    Signature::Id getId(const Signature& signature) {
+        Signature::Id id;
+        std::map<Signature, Signature::Id>::iterator it = signature_map.find(signature);
+        if (it == signature_map.end()) {
+            Signature::Id sid;
+            sid.value_ = signatures.size();
+            Signature staticSignature = signature - signatures[1].signature;
+            if ( signature != staticSignature ) {
+                signatures.push_back( SignatureInfo(staticSignature, sid) );
+                signature_map[staticSignature] = sid;
+            }
+            id.value_ = signatures.size();
+            signatures.push_back( SignatureInfo(signature, sid) );
+            signature_map[signature] = id;
+        } else {
+            id = it->second;
+        }
+        return id;
     }
 
-    uint16_t generation() const {
-        ASSERT(data_.tracked.untracked == 0);
-        return data_.tracked.generation;
+    Signature::Id getStaticId(const Signature& signature) {
+        Signature::Id id = getId(signature);
+        return signatures[id.value_].staticId;
     }
 
-    uint16_t type() const {
-        ASSERT(data_.tracked.untracked == 1);
-        return data_.untracked.type;
+    Signature::Id getStaticId(Signature::Id id) const {
+        ASSERT(id.value_ < signatures.size());
+        return signatures[id.value_].staticId;
     }
 
-    uint16_t data() const {
-        ASSERT(data_.tracked.untracked == 1);
-        return data_.untracked.data;
+    const Signature& getSignature(Signature::Id id) const {
+        ASSERT(id.value_ < signatures.size());
+        return signatures[id.value_].signature;
+    }
+
+    const Signature& getStaticSignature(Signature::Id id) const {
+        ASSERT(id.value_ < signatures.size());
+        return signatures[signatures[id.value_].staticId.value_].signature;
     }
 
 private:
-    template<typename ... Args>
-    friend class BaseState;
-
-    struct Untracked {
-        uint32_t data : 24;
-        uint32_t type : 7;
-        uint32_t untracked : 1;
+    struct SignatureInfo {
+        SignatureInfo(const Signature& s, Signature::Id i) : signature(s), staticId(i) { }
+        Signature signature;
+        Signature::Id staticId;
     };
 
+    std::vector<SignatureInfo> signatures;
+    std::map<Signature, Signature::Id> signature_map;
+
+};
+
+
+class Entity {
+public:
+    struct Hash {
+        Hash() : signature(), index(0) { }
+        Signature::Id signature;
+        uint16_t index;
+    };
+
+    Entity() { data.raw.value = 0x00000000; }
+
+    bool operator< (const Entity& rhs) const { return data.raw.value <  rhs.data.raw.value; }
+    bool operator==(const Entity& rhs) const { return data.raw.value == rhs.data.raw.value; }
+    bool operator!=(const Entity& rhs) const { return data.raw.value != rhs.data.raw.value; }
+
+    bool untracked() const {
+        return data.tracked.untracked;
+    }
+
+    uint16_t index() const {
+        ASSERT(data.tracked.untracked == 0);
+        return data.tracked.untracked;
+    }
+
+    uint16_t generation() const {
+        ASSERT(data.tracked.untracked == 0);
+        return data.tracked.generation;
+    }
+
+    uint16_t type() const {
+        ASSERT(data.tracked.untracked == 1);
+        return data.untracked.type;
+    }
+
+    uint16_t user() const {
+        ASSERT(data.tracked.untracked == 1);
+        return data.untracked.user;
+    }
+
+private:
+    friend class EntityManager;
+
     struct Tracked {
-        uint32_t index : 16;
-        uint32_t generation : 15;
-        uint32_t untracked : 1;
+        uint32_t index : 16;        // index of entity
+        uint32_t generation : 15;   // generation of entity
+        uint32_t untracked : 1;     // should always be zero
+    };
+
+    struct Untracked {
+        uint32_t user : 24;         // user data, can be used any way you want
+        uint32_t type : 7;          // type of entity
+        uint32_t untracked : 1;     // should always be 1
     };
 
     struct Raw {
         uint32_t value;
     };
 
-    Entity(Tracked tracked) { data_.tracked = tracked; }
+    Entity(uint32_t in) { data.raw.value = in; }
+    Entity(Tracked in) { data.tracked = in; }
+    Entity(Untracked in) { data.untracked = in; }
+
 
     union {
         Tracked tracked;
         Untracked untracked;
         Raw raw;
-    } data_;
+    } data;
 
 };
+
+
+class EntityManager {
+public:
+
+    struct GenerationInfo {
+        uint16_t generation : 15;
+        uint16_t unsafe : 1;
+    };
+
+    EntityManager() : head(EndOfList), tail(EndOfList) { }
+
+    void extend(uint16_t e) {
+        uint16_t s = ginfo.size();
+        Entity::Tracked entity;
+        entity.untracked = 0;
+        entity.generation = 0;
+        GenerationInfo info;
+        info.generation = 0;
+        info.unsafe = 0;
+        for (uint16_t i = s; i < e; ++i) {
+            ginfo.push_back(info);
+            hashes.push_back( Entity::Hash() );
+            entity.index = i;
+            destroy( Entity(entity) );
+        }
+    }
+
+    bool valid(Entity entity) const {
+        if ( entity.untracked() == 1 ||
+             (entity.index() < ginfo.size() &&
+              ginfo[entity.index()].generation == entity.generation() )
+           ) {
+           return true;
+        }
+        return false;
+    }
+
+    Entity create() {
+        Entity::Tracked entity;
+        if (head == EndOfList) {
+            entity.index = ginfo.size();
+            GenerationInfo info;
+            info.generation = 1;
+            info.unsafe = 0;
+            ginfo.push_back(info);
+            hashes.push_back( Entity::Hash() );
+        } else {
+            entity.index = head;
+            head = hashes[entity.index].index;
+            hashes[entity.index] = Entity::Hash();
+            if (head == EndOfList)
+                tail = EndOfList;
+        }
+        entity.untracked = 0;
+        entity.generation = ginfo[entity.index].generation;
+        return Entity(entity);
+    }
+
+
+    void destroy(Entity entity) {
+        ASSERT(entity.untracked() == 0 && ginfo[entity.index()].generation == entity.generation());
+        if (ginfo[entity.index()].generation == 0x7fff) {
+            ASSERT(false);
+            // have this roll over if we feel adventurous
+        } else {
+            // we won't increment if unsafe is set to 1
+            ginfo[entity.index()].unsafe = 0;
+            ++ginfo[entity.index()].generation;
+            hashes[entity.index()].index = EndOfList;
+            if (head == EndOfList) {
+                head = entity.index();
+            } else {
+                hashes[tail].index = entity.index();
+            }
+            tail = entity.index();
+        }
+    }
+
+    Entity::Hash& getHash(uint16_t index) {
+        return hashes[index];
+    }
+
+    const Entity::Hash& getHash(uint16_t index) const {
+        return hashes[index];
+    }
+
+    Entity fromIndex(uint16_t index) const {
+        ASSERT(index < ginfo.size());
+        Entity::Tracked entity;
+        entity.index = index;
+        entity.generation = ginfo[index].generation;
+        entity.untracked = 0;
+        return Entity(entity);
+    }
+
+private:
+    static const uint16_t EndOfList = 0xffff;
+
+    uint16_t head;
+    uint16_t tail;
+    std::vector<GenerationInfo> ginfo;
+    std::vector<Entity::Hash> hashes;
+};
+
+
 
 template<typename T>
 class Ref {
 public:
-    Ref(uint8_t* ptr) : ptr_( reinterpret_cast<T*>(ptr) ) { }
+    template<typename U>
+    Ref(U* ptr) : ptr_( reinterpret_cast<U*>(ptr) ) { }
 
     Ref(T* ptr = nullptr) : ptr_(ptr) { }
 
@@ -278,18 +598,105 @@ private:
 
 };
 
-struct EntityHash {
-    EntityHash() : signature(Signature::Null()), index(0) { }
-    EntityHash(Signature s, uint16_t i) : signature(s), index(i) { }
-    Signature signature;
-    uint16_t index;
+
+class BaseInterface {
+protected:
+    virtual void move_(Entity::Hash oldHash, Entity::Hash newHash) = 0;
+
+public:
+    void move(Entity::Hash oldHash, Entity::Hash newHash) { move_(oldHash, newHash); }
+
 };
+
+
+template<typename T>
+class ComponentInterface : public BaseInterface {
+private:
+    virtual void move_(Entity::Hash oldHash, Entity::Hash newHash) { move(oldHash, newHash); }
+
+    T& t_;
+
+public:
+    ComponentInterface(T& t) : t_(t) { }
+
+    void move(Entity::Hash oldHash, Entity::Hash newHash) { /* default is to do nothing... */ }
+
+};
+
+template<typename T>
+ComponentInterface<T> make_interface(T& t) {
+    return ComponentInterface<T>(t);
+}
+
+
+
+
+class Any {
+private:
+    constexpr static const size_t MaxBuffer = 8;
+
+    BaseInterface* base() { return reinterpret_cast<BaseInterface*>(buffer_); }
+
+    uint8_t buffer_[MaxBuffer];
+
+public:
+
+    Any() {
+        ASSERT(false);
+    }
+
+    template<typename T>
+    Any(T& t) {
+        ASSERT(sizeof(ComponentInterface<T>) <= MaxBuffer);
+        BaseInterface* d = new (buffer_) ComponentInterface<T>(t);
+        ASSERT(d - base() == 0);
+    }
+
+    void move(Entity::Hash oldHash, Entity::Hash newHash) { return base()->move(oldHash, newHash); }
+
+};
+
+
+template<typename... Ts>
+struct StaticLoop {
+    using tuple_type = std::tuple<Ts...>;
+    constexpr static const uint8_t tuple_size = std::tuple_size<tuple_type>::value;
+
+    static void move(std::tuple<Ts...>& t, Entity::Hash oldHash, Entity::Hash newHash) {
+        operations<>::move(t, oldHash, newHash);
+    }
+
+    template<uint32_t INDEX = 0, bool DUMMY = false>
+    struct operations {
+        static void move(std::tuple<Ts...>& t, Entity::Hash oldHash, Entity::Hash newHash) {
+            make_interface(std::get<INDEX>(t)).move(oldHash, newHash);
+            std::cout << (int)INDEX << std::endl;
+            operations<INDEX + 1>::move(t, oldHash, newHash);
+        }
+    };
+
+    template<bool DUMMY>
+    struct operations<tuple_size - 1, DUMMY> {
+        constexpr static const uint8_t INDEX = tuple_size - 1;
+        static void move(std::tuple<Ts...>& t, Entity::Hash oldHash, Entity::Hash newHash) {
+            make_interface(std::get<INDEX>(t)).move(oldHash, newHash);
+            std::cout << (int)INDEX << std::endl;
+        }
+    };
+
+};
+
+
+
+
+
+
 
 template<typename T>
 class VectorMap {
 private:
-    using pair_type = std::pair<Signature, std::vector<T>>;
-    using table_type = std::map<Signature, std::vector<T>>;
+    using pair_type = std::pair<Signature::Id, std::vector<T>>;
+    using table_type = std::map<Signature::Id, std::vector<T>>;
     table_type table;
 
 public:
@@ -304,7 +711,7 @@ public:
         return s;
     }
 
-    bool hasHash(EntityHash hash) const {
+    bool hasHash(Entity::Hash hash) const {
         bool has = true;
         typename table_type::const_iterator it = table.find(hash.signature);
         if (it == table.end() || hash.index >= it->second.size())
@@ -312,7 +719,7 @@ public:
         return has;
     }
 
-    Ref<T> get(EntityHash hash) {
+    Ref<T> get(Entity::Hash hash) {
         Ref<T> ref;
         typename table_type::iterator it = table.find(hash.signature);
         if (it != table.end() && hash.index < it->second.size()) {
@@ -329,10 +736,10 @@ public:
         return table.end();
     }
 
-     void move(EntityHash oldHash, EntityHash newHash) {
+     void move(Entity::Hash oldHash, Entity::Hash newHash) {
         typename table_type::iterator newSig = table.find(newHash.signature);
         if (newSig == table.end()) {
-            if (newHash.signature == Signature::Null()) return;
+            if (newHash.signature.value() == 0) return;
             auto ret = table.insert(pair_type(newHash.signature, std::vector<T>()));
             newSig = ret.first;
         }
@@ -350,263 +757,53 @@ public:
 
 };
 
-template<>
-class VectorMap<bool> {
-private:
-    using pair_type = std::pair<Signature, std::vector<bool>>;
-    using table_type = std::map<Signature, std::vector<bool>>;
-    table_type table;
-
-public:
-    size_t size(Signature signature) const {
-        size_t s = 0;
-        typename table_type::const_iterator it = table.find(signature);
-        if (it != table.end()) {
-            s = it->second.size();
-        }
-        return s;
-    }
-
-    bool hasHash(EntityHash hash) const {
-        bool has = true;
-        typename table_type::const_iterator it = table.find(hash.signature);
-        if (it == table.end() || hash.index >= it->second.size())
-            has = false;
-        return has;
-    }
-
-    bool get(EntityHash hash) const {
-        ASSERT( hasHash(hash) );
-        return table.find(hash.signature)->second[hash.index];
-    }
-
-    void set(EntityHash hash, bool value) {
-        ASSERT( hasHash(hash) );
-        table.find(hash.signature)->second[hash.index] = value;
-    }
-
-    typename table_type::const_iterator begin() const {
-        return table.begin();
-    }
-
-    typename table_type::const_iterator end() const {
-        return table.end();
-    }
-
-     void move(EntityHash oldHash, EntityHash newHash) {
-        typename table_type::iterator newSig = table.find(newHash.signature);
-        if (newSig == table.end()) {
-            if (newHash.signature == Signature::Null()) return;
-            auto ret = table.insert(pair_type(newHash.signature, std::vector<bool>()));
-            newSig = ret.first;
-        }
-
-        if (newSig->second.size() <= newHash.index) {
-            newSig->second.resize(newHash.index + 1);
-        }
-
-        typename table_type::iterator oldSig = table.find(oldHash.signature);
-
-        if (oldSig != table.end()) {
-            std::swap(oldSig->second[oldHash.index], newSig->second[newHash.index]);
-        }
-    }
-
-};
-
-
 template<typename T>
-class EntityMap {
+class ComponentInterface<VectorMap<T>> : public BaseInterface {
 private:
-    using table_type = std::map<uint16_t, T>;
-    table_type table;
+    virtual void move_(Entity::Hash oldHash, Entity::Hash newHash) { move(oldHash, newHash); }
+
+    VectorMap<T>& t_;
 
 public:
-    using value_type = T;
+    ComponentInterface(VectorMap<T>& t) : t_(t) { }
 
-    size_t size() const {
-        return table.size();
-    }
-
-    typename table_type::iterator begin() {
-        return table.begin();
-    }
-
-    typename table_type::iterator end() {
-        return table.end();
-    }
-
-    Ref<T> get(Entity entity) {
-        Ref<T> ref;
-        typename table_type::iterator it = table.find(entity.index());
-        if (it != table.end())
-            ref = Ref<T>( &(it->second) );
-        return ref;
-    }
-
-    void add(Entity entity) {
-        typename table_type::iterator it = table.find(entity.index());
-        if (it == table.end())
-            table[entity.index()] = T();
-    }
-
-    void remove(Entity entity) {
-        table.erase(entity.index());
-    }
+    void move(Entity::Hash oldHash, Entity::Hash newHash) { std::cout << "RAN VECTORMAP!\n"; }
 
 };
 
 
 
-class AnyComponentMap {
+
+class HashManager {
 private:
-    /*
-        These 8 bytes account for the 4 for the vtable pointer, and 4 for the pointer to the object itself.
-        If this needs to be compiled for 64 bit, it needs to be 16 bytes...
-    */
-    constexpr static const size_t MaxBuffer = 8;
+    static const uint16_t EndOfList = 0xffff;
 
-    struct Base {
-        virtual uint8_t* get(EntityHash hash) = 0;
+    struct FreeInfo {
+        uint16_t head;
+        uint16_t size;
     };
 
-    template<typename T>
-    struct Derived : public Base {
-        Derived(T& t) : r(t) { }
-        uint8_t* get(EntityHash hash) { return 0; }
-        T& r;
-    };
-
-    template<typename U>
-    struct Derived<VectorMap<U>> : public Base {
-        Derived(VectorMap<U>& t) : r(t) { }
-        uint8_t* get(EntityHash hash) { return 0; }
-        VectorMap<U>& r;
-    };
-
-    template<typename U>
-    struct Derived<EntityMap<U>> : public Base {
-        Derived(EntityMap<U>& t) : r(t) { }
-        uint8_t* get(EntityHash hash) { return 0; }
-        EntityMap<U>& r;
-    };
-
-    Base* base() { return reinterpret_cast<Base*>(buffer_); }
-
-    /*
-        This is a raw memory buffer than derived classes are newed onto.
-    */
-    uint8_t buffer_[MaxBuffer];
+    std::map<Signature::Id, FreeInfo> freeMap;
+    VectorMap<uint16_t> entityData;
+    VectorMap<uint8_t> activeData;
 
 public:
 
-    AnyComponentMap() {
-        ASSERT(false);
+    uint16_t& entityIndex(Entity::Hash hash) {
+        return *entityData.get(hash);
     }
 
-    template<typename T>
-    AnyComponentMap(T& t) {
-        ASSERT(sizeof(Derived<T>) <= MaxBuffer);
-        Base* d = new (buffer_) Derived<T>(t);
-        ASSERT(d - base() == 0);
-    }
-
-
-    uint8_t* get(EntityHash hash) { return base()->get(hash); }
-
-};
-
-
-
-template<typename... Ts>
-class BaseState {
-public:
-    BaseState() : head(EndOfList), tail(EndOfList) { }
-
-/*
-    void reserveSignature(Signature signature, uint32_t count) {
-        activeData.move(EntityHash(), EntityHash(signature, count));
-        entityData.move(EntityHash(), EntityHash(signature, count));
-    }
-*/
-
-   bool valid(Entity entity) const {
-        if ( entity.untracked() == 1 ||
-             (entity.index() < ginfo.size() &&
-              ginfo[entity.index()].generation == entity.generation() )
-           ) {
-           return true;
-        }
-        return false;
-    }
-
-    Entity getEntityFromIndex(uint16_t index) const {
-        Entity::Tracked tracked;
-        tracked.untracked = 0;
-        tracked.index = index;
-        tracked.generation = ginfo[tracked.index].generation;
-        return Entity(tracked);
-    }
-
-    EntityHash getHashFromIndex(uint16_t index) const {
-        return hashes[index];
-    }
-
-    Entity getEntity(EntityHash hash) {
-        Entity::Tracked tracked;
-        tracked.untracked = 0;
-        tracked.index = *entityData.get(hash);
-        tracked.generation = ginfo[tracked.index].generation;
-        return Entity(tracked);
-    }
-
-    EntityHash getHash(Entity entity) const {
-        return hashes[entity.index()];
-    }
-
-    bool getActive(Entity entity) {
-        return activeData.get( getHash(entity) );
-    }
-
-    void setActive(Entity entity, bool value) {
-        activeData.set(getHash(entity), value);
-    }
-
-    Entity create() {
-        EntityHash hash;
-        Entity::Tracked entity;
-        if (head == EndOfList) {
-            entity.index = ginfo.size();
-            GenerationInfo info;
-            info.generation = 1;
-            info.unsafe = 0;
-            ginfo.push_back(info);
-            hashes.push_back( EntityHash() );
-            dynamicSignature.push_back(Signature::Null());
-        } else {
-            entity.index = head;
-            head = hashes[entity.index].index;
-            hashes[entity.index] = EntityHash();
-            dynamicSignature[entity.index] = Signature::Null();
-            if (head == EndOfList)
-                tail = EndOfList;
-        }
-        entity.untracked = 0;
-        entity.generation = ginfo[entity.index].generation;
-        return Entity(entity);
-    }
-
-    EntityHash changeSignature(Entity entity, EntityHash oldHash, Signature signature) {
+    Entity::Hash changeSignature(Entity entity, Entity::Hash oldHash, Signature::Id signature) {
         ASSERT(oldHash.signature != signature);
 
-        EntityHash newHash;
+        Entity::Hash newHash;
 
         newHash.signature = signature;
 
-        typename std::map<Signature, FreeInfo>::iterator newInfo = freeMap.find(newHash.signature);
+        typename std::map<Signature::Id, FreeInfo>::iterator newInfo = freeMap.find(newHash.signature);
         if (newInfo == freeMap.end()) {
             newHash.index = 0;
-            if (newHash.signature != Signature::Null()) {
+            if (newHash.signature.value() != 0) {
                 FreeInfo info;
                 info.size = 1;
                 info.head = EndOfList;
@@ -622,9 +819,10 @@ public:
             }
         }
 
-        typename std::map<Signature, FreeInfo>::iterator oldInfo = freeMap.find(oldHash.signature);
+        typename std::map<Signature::Id, FreeInfo>::iterator oldInfo = freeMap.find(oldHash.signature);
         if (oldInfo != freeMap.end()) {
-            activeData.set(oldHash, false);
+            //activeData.set(oldHash, false);
+            *activeData.get(oldHash) = false;
             *entityData.get(oldHash) = oldInfo->second.head;
             oldInfo->second.head = oldHash.index;
         }
@@ -632,101 +830,126 @@ public:
         entityData.move(oldHash, newHash);
         activeData.move(oldHash, newHash);
 
-        if (newHash.signature != Signature::Null()) {
+        if (newHash.signature.value() != 0) {
             *entityData.get(newHash) = entity.index();
-            activeData.set(newHash, false);
+            //activeData.set(newHash, false);
+            *activeData.get(oldHash) = false;
         }
 
-        hashes[entity.index()] = newHash;
+        //hashes[entity.index()] = newHash;
 
         return newHash;
     }
 
-    void destroy(Entity entity) {
-        ASSERT(entity.untracked() == 0 && ginfo[entity.index()].generation == entity.generation());
-        if (ginfo[entity.index()].generation == 0x7fff) {
-            // this is a roll over
-            ASSERT(false);
-        } else {
-            // we won't increment if unsafe is set to 1
-            //ginfo[entity.Tracked().index].unsafe = 0;
-            ++ginfo[entity.index()].generation;
-            hashes[entity.index()].index = EndOfList;
-            if (head == EndOfList) {
-                head = entity.index();
-            } else {
-                hashes[tail].index = entity.index();
-            }
-            tail = entity.index();
-        }
-    }
-
-    template<typename F>
-    void ForEach(Signature signature, F func) {
-        EntityHash hash;
-        for ( const auto& kv : activeData ) {
-            hash.signature = kv.first;
-            if (kv.first.contains(signature)) {
-                for (hash.index = 0; hash.index < kv.second.size(); ++hash.index) {
-                    if (kv.second[hash.index] == true) {
-                        func(hash);
-                    }
-                }
-            }
-        }
-    }
-
-    using pack_type = std::tuple<Ts...>;
-    using tuple_type = std::tuple<typename Ts::value_type...>;
 
 
-    template<uint32_t index, bool dummy>
-    struct print_tuple {
-        void operator() () {
-        //void operator() (tuple<Ts...>& t) {
-            std::cout << typeid(typename std::tuple_element<index, tuple_type>::type).name() << std::endl;
-            print_tuple<index + 1, dummy>()();
-        }
-    };
-
-    template<bool dummy>
-    struct print_tuple<std::tuple_size<tuple_type>::value - 1, dummy> {
-        void operator() () {
-            std::cout << typeid(typename std::tuple_element<std::tuple_size<tuple_type>::value - 1, tuple_type>::type).name() << std::endl;
-        }
-    };
-
-
-    void print_things() {
-        print_tuple<0, false>()();
-    }
-
-protected:
-    constexpr static uint16_t EndOfList = 0xffff;
-
-    struct FreeInfo {
-        uint16_t head;
-        uint16_t size;
-    };
-
-    struct GenerationInfo {
-        uint16_t generation : 15;
-        uint16_t unsafe : 1;
-    };
-
-    uint16_t head;
-    uint16_t tail;
-    std::vector<GenerationInfo> ginfo;
-    std::vector<EntityHash> hashes;
-    std::vector<Signature> dynamicSignature;
-
-    std::map<Signature, FreeInfo> freeMap;
-    VectorMap<uint16_t> entityData;
-    VectorMap<bool>     activeData;
-
-
-    pack_type pack;
 };
+
+
+class ProxyContainer {
+public:
+    ProxyContainer(const Signature& s) { }
+
+private:
+
+
+};
+
+
+template<typename... Ts>
+class State {
+public:
+    using component_tuple_type = std::tuple<Ts...>;
+    using pack_type = std::tuple<typename Ts::value_type...>;
+
+    State() : signatureManager(Signature()/* pass dynamic signature here! */) { }
+
+    void extend(uint16_t e) { entityManager.extend(e); }
+
+/*
+    void reserveSignature(Signature::Id id, uint32_t count) {
+        Entity::Hash oldHash = EntityHash();
+        Entity::Hash newHash = EntityHash(id, count);
+        activeData.move(oldHash, newHash);
+        entityData.move(oldHash, newHash);
+        StaticLoop<Ts...>::move(pack, oldHash, newHash);
+    }
+*/
+
+    // ReserveSignature  // needs comps
+
+    Entity create() { return entityManager.create(); }
+
+    bool valid(Entity entity) const { return entityManager.valid(entity); }
+
+    const Signature& getSignature(Entity entity) const { return signatureManager.getSignature(entityManager.getHash(entity.index()).signature); }
+
+    const Signature& getSignature(Signature::Id id) const { return signatureManager.getSignature(id); }
+
+    Signature::Id getSignature(const Signature& signature) { return signatureManager.getId(signature); }
+
+    template<uint8_t... Args>
+    void changeSignature(Entity entity) {
+        Signature::Id id = signatureManager.getId( Signature::make<Args...>() );
+        Entity::Hash oldHash = entityManager.getHash(entity.index());
+        Entity::Hash newHash = hashManager.changeSignature(entity, oldHash, staticId);
+        entityManager.getHash(entity.index()) = newHash;  // this needs to be full signature!
+        // move all new components!
+        StaticLoop<Ts...>::move(pack, oldHash, newHash);
+    }
+
+    template<uint8_t... Args>
+    void addSignature(Entity entity) {
+        /*
+
+            newFullSig = oldSig + newSig  // may put this into the THING
+
+
+        */
+    }
+
+    void destroy(Entity entity) {
+        changeSignature<>(entity);
+        /*
+            will have only dynamic now
+            call removeSignature with stored id
+        */
+        entityManager.destroy(entity);
+    }
+
+    Entity entityFromHash(Entity::Hash hash) { entityManager.fromIndex(hashManager.entityIndex(hash)); }
+
+    Entity::Hash hashFromEntity(Entity entity) const { entityManager.getHash(entity.index()); }
+
+
+    ProxyContainer container(Signature::Id id) {
+        return ProxyContainer(signatureManager.getSignature(id));
+    }
+
+    ProxyContainer container(const Signature& signature) {
+        return ProxyContainer(signature);
+    }
+
+    void test_loop() {
+        StaticLoop<Ts...>::move(pack, Entity::Hash(), Entity::Hash());
+    }
+
+private:
+
+
+
+    SignatureManager signatureManager;
+
+    EntityManager entityManager;
+
+    HashManager hashManager;
+
+    component_tuple_type pack;
+
+};
+
+
+
 
 
 

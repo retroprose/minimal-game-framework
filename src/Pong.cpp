@@ -74,7 +74,7 @@ struct Cp {
 
 */
 
-
+/*
 template<uint8_t ... Values>
 class bits {
 private:
@@ -92,19 +92,7 @@ public:
     constexpr static const uint32_t value = set<Values...>();
 
 };
-
-
-void print_bits(uint32_t bits) {
-    uint32_t mask = 0x80000000;
-    for (int i = 0; i < 32; i++) {
-        if (mask & bits)
-            std::cout << "1";
-        else
-            std::cout << "0";
-        mask = mask >> 1;
-    }
-    std::cout << std::endl;
-}
+*/
 
 enum CpType : uint8_t {
     Body = 0,
@@ -113,299 +101,30 @@ enum CpType : uint8_t {
     HatColor
 };
 
-using MyState = BaseState<
+
+using MyState = State<
     VectorMap<Cp::Body>,
-    VectorMap<Cp::Color>,
-    EntityMap<Cp::Controller>,
-    EntityMap<Cp::Color>
+    VectorMap<Cp::Color>
+    //EntityMap<Cp::Controller>,
+    //EntityMap<Cp::Color>
 >;
 
-template<typename T>
-struct test_single_ref {
-    T* t;
-};
-
-template<typename T, uint8_t ... Args>
-struct test_ref {
-
-    using tuple_type = std::tuple<test_single_ref<typename std::tuple_element<Args, typename T::tuple_type>::type>...>;
-
-    test_ref(T& t) {
-
-    }
-
-    template<uint8_t index>
-    typename std::tuple_element<index, tuple_type>::type& get() {
-        return std::get<index>(refs);
-    }
-
-    tuple_type refs;
-};
 
 
-template<uint8_t ... Args, typename T>
-test_ref<T, Args...> make_test_ref(T& t) {
-    return test_ref<T, Args...>(t);
+void test_func(Signature::Id id) {
+    std::cout << "RAN ID\n";
 }
 
-/*
-
-
-
-    struct pretty_ref {
-        static buffer_[] // zeroed out  memory
-
-
-
-
-    }
-
-
-    ref.nullify();
-
-    for ( auto std::tie(body, color) : state.foreach<Body, Color>() ) {
-
-    }
-
-    for ( auto tup : state.foreach<Body, Color>() ) {
-        std::tie(ref.body, ref.color) = tup;
-
-        // DO STUFF!
-
-    }
-
-
-
-
-
-class State : public BaseState {
-public:
-    enum StaticComp: uint8_t {
-        Body = 0,
-        Color
-        //Controller = 16,
-        //HatColor
-    };
-
-     enum DynamicComp: uint8_t {
-        Controller = 0,
-        HatColor
-    };
-
-    struct EntityRef {
-        Entity entity;
-        EntityHash hash;
-        Ref<::Body> body;
-        Ref<::Color> color;
-        Ref<::Controller> controller;
-        Ref<::Color> hatColor;
-    };
-
-    AnyComponentMap any(uint8_t cp) {
-        switch(cp) {
-        //case Body:          return AnyComponentMap(bodyData);
-        //case Color:         return AnyComponentMap(colorData);
-        //case Controller:    return AnyComponentMap(controllerData);
-        //case HatColor:      return AnyComponentMap(hatColorData);
-        default:            return AnyComponentMap();
-        }
-    }
-
-    void moveComponents(EntityHash oldHash, EntityHash newHash) {
-        for (auto& cp : ComponentList(newHash.signature)) {
-            switch(cp) {
-            case Body:       bodyData.move(oldHash, newHash);   break;
-            case Color:     colorData.move(oldHash, newHash);   break;
-            default:                           ASSERT(false);   break;
-            }
-        }
-    }
-
-    //void reserveSignature(Signature signature, uint32_t count = 0) {
-    //    BaseState::reserveSignature(signature, count);
-    //    moveComponents( EntityHash(), EntityHash(signature, count) );
-    //}
-
-
-    void changeSignature(Entity entity, Signature signature) {
-        EntityHash oldHash = getHash(entity);
-        if (oldHash.signature == signature) return;
-        EntityHash newHash = BaseState::changeSignature(entity, oldHash, signature);
-        moveComponents(oldHash, newHash);
-    }
-
-    void destroy(Entity entity) {
-        changeSignature(entity, Signature::Null());
-        removeSignature(entity, 0xffff);
-        BaseState::destroy(entity);
-    }
-
-    void addSignature(Entity entity, Signature signature) {
-        dynamicSignature[entity.index()] -= signature;
-        for (auto& cp : ComponentList(signature)) {
-            switch(cp) {
-            case Controller:    controllerData.add(entity); break;
-            case HatColor:       hatColorData.add(entity);  break;
-            default:                        ASSERT(false);  break;
-            }
-        }
-    }
-
-    void removeSignature(Entity entity, Signature signature) {
-        dynamicSignature[entity.index()] -= signature;
-        for (auto& cp : ComponentList(signature)) {
-            switch(cp) {
-            case Controller:    controllerData.remove(entity); break;
-            case HatColor:      hatColorData.remove(entity);   break;
-            default:                          break;
-            }
-        }
-    }
-
-    Ref<::Body> body(Entity entity)             { return bodyData.get( getHash(entity) ); }
-    Ref<::Color> color(Entity entity)           { return colorData.get( getHash(entity) ); }
-
-    Ref<::Body> body(EntityHash hash)           { return bodyData.get(hash); }
-    Ref<::Color> color(EntityHash hash)         { return colorData.get(hash); }
-
-    Ref<::Controller> controller(Entity entity) { return controllerData.get(entity); }
-    Ref<::Color> hatColor(Entity entity)        { return hatColorData.get(entity); }
-
-    EntityMap<::Controller>& controller()       { return controllerData; }
-    EntityMap<::Color>& hatColor()              { return hatColorData; }
-
-private:
-    VectorMap<::Body> bodyData;
-    VectorMap<::Color> colorData;
-
-    EntityMap<::Controller> controllerData;
-    EntityMap<::Color> hatColorData;
-
-};
-*/
-
-
-template<uint32_t index, typename T>
-struct print_ref {
-    void operator() () {
-    //void operator() (tuple<Ts...>& t) {
-        std::cout << index << ": " << typeid(typename std::tuple_element<index, typename T::tuple_type>::type).name() << std::endl;
-        print_ref<index - 1, T>()();
-    }
-};
-
-template<typename T>
-struct print_ref<0, T> {
-    void operator() () {
-        std::cout << 0 << ": " << typeid(typename std::tuple_element<0, typename T::tuple_type>::type).name() << std::endl;
-    }
-};
-
-template<typename T>
-void print_ref_() {
-    print_ref<std::tuple_size<typename T::tuple_type>::value - 1, T>()();
+void test_func(const Signature& signature) {
+    std::cout << "RAN SIGNATURE\n";
 }
 
-
-template<typename T>
-struct TestRef {
-    T* t;
-};
-
-
-template<typename... Ts>
-struct TestState {
-    using pack_type = std::tuple<Ts...>;
-    using tuple_type = std::tuple<typename Ts::value_type...>;
-
-	using tuple_ref_type = std::tuple<TestRef<typename Ts::value_type>...>;
-
-    struct iterator {
-        //using tuple_it_type = std::tuple<typename std::tuple_element<Ts, typename T::pack_type>::iterator...>;
-		using tuple_it_type = std::tuple<typename Ts::iterator...>;
-        tuple_it_type it_pack;
-
-		bool operator!=(const iterator& rhs) const {
-			return std::get<0>(it_pack) != std::get<0>(rhs.it_pack);
-		}
-
-		tuple_ref_type operator*() {
-			tuple_ref_type ref;
-			operate<0, false>::setRef(it_pack, ref);
-			return ref;
-		}
-
-        iterator& operator++() {
-			operate<0, false>::increment(it_pack);
-            return *this;
-        }
-
-		void setBegin(pack_type& pack) {
-			operate<0, false>::setBegin(it_pack, pack);
-		}
-
-		void setEnd(pack_type& pack) {
-			operate<0, false>::setEnd(it_pack, pack);
-		}
-
-        template<uint32_t index, bool dummy>
-        struct operate {
-			static void setRef(tuple_it_type& it_pack, tuple_ref_type& ref) {
-				std::get<index>(ref).t = &(*std::get<index>(it_pack));
-                operate<index + 1, dummy>::setRef(it_pack, ref);
-			}
-			static void setBegin(tuple_it_type& s_it_pack, pack_type& pack) {
-				std::get<index>(s_it_pack) = std::get<index>(pack).begin();
-                operate<index + 1, dummy>::setBegin(s_it_pack, pack);
-			}
-			static void setEnd(tuple_it_type& s_it_pack, pack_type& pack) {
-				std::get<index>(s_it_pack) = std::get<index>(pack).end();
-                operate<index + 1, dummy>::setEnd(s_it_pack, pack);
-			}
-            static void increment(tuple_it_type& s_it_pack) {
-				++std::get<index>(s_it_pack);
-                operate<index + 1, dummy>::increment(s_it_pack);
-            }
-        };
-
-		constexpr static const uint32_t it_pack_size = std::tuple_size<tuple_type>::value;
-
-        template<bool dummy>
-        struct operate<it_pack_size - 1, dummy> {
-			constexpr static const uint32_t index = it_pack_size - 1;
-			static void setRef(tuple_it_type& it_pack, tuple_ref_type& ref) {
-				std::get<index>(ref).t = &(*std::get<index>(it_pack));
-			}
-			static void setBegin(tuple_it_type& it_pack, pack_type& pack) {
-				std::get<index>(it_pack) = std::get<index>(pack).begin();
-			}
-			static void setEnd(tuple_it_type& it_pack, pack_type& pack) {
-				std::get<index>(it_pack) = std::get<index>(pack).end();
-			}
-			static void increment (tuple_it_type& it_pack) {
-				++std::get<index>(it_pack);
-            }
-        };
-
-    };
-
-	iterator begin() {
-		iterator it;
-		it.setBegin(pack);
-		return it;
-	}
-
-	iterator end() {
-		iterator it;
-		it.setEnd(pack);
-		return it;
-	}
-
-    pack_type pack;
-};
-
-
-
+void print_sig(const Signature& s) {
+    for (auto& cp : s) {
+        std::cout << (int)cp << ", ";
+    }
+    std::cout << std::endl;
+}
 
 
 ////////////////////////////////////////////////////////////
@@ -416,6 +135,13 @@ struct TestState {
 ////////////////////////////////////////////////////////////
 int main()
 {
+
+    //test_func({Body, Color});
+
+    MyState state;
+
+    state.test_loop();
+
 
     // Define some constants
     const int gameWidth = 800;
@@ -459,39 +185,9 @@ int main()
     message.setString("Use WASD to move, mouse to move cursor.\nLeft and right mouse button adds and\nRemoves player's hat.");
 
 
-	TestState<
-		std::vector<int>,
-		std::vector<float>
-	> state;
-
-	auto& iv = std::get<0>(state.pack);
-	auto& fv = std::get<1>(state.pack);
-
-	for (int i = 0; i < 10; i++) {
-		iv.push_back(i);
-		fv.push_back((float)i * 0.01f);
-	}
-
-	TestRef<int> ir;
-	TestRef<float> fr;
-
-	//for (auto ref : state) {
-	//	std::cout << *(std::get<0>(ref).t) << ", ";
-	//	std::cout << *(std::get<1>(ref).t) << std::endl;
-	//}
-
-    for (auto ref : state) {
-        std::tie(ir, fr) = ref;
-		std::cout << *(ir.t) << ", ";
-		std::cout << *(fr.t) << std::endl;
-	}
-
-	//for (std::tie(ir, fr) : state) {
-	//	std::cout << *(ir.t) << ", ";
-	//	std::cout << *(fr.t) << std::endl;
-	//}
-
     //MyState state;
+
+    //state.do_thing();
 
     //state.print_things();
 
