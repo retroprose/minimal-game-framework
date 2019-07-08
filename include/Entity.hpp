@@ -2,10 +2,33 @@
 #define ENTITY_HPP
 
 
+#include <typeinfo>
+
 #include <Container.hpp>
 
 
 /*
+    Signature
+    Entity
+    Hash
+    Ref
+
+    CpInterface
+        Concrete
+        Any
+
+        CpStatic loop, make any, interface
+
+    State
+        ProxyContainer
+
+        EntityManager
+        HashManager
+
+    VectorMap
+    EntityMap
+
+
 
     template<class... Ts>
     void doStuff(std::tuple<Ts...> const& tupOfCtr { ... }
@@ -80,6 +103,66 @@
 
     ForEach
 
+*/
+
+
+/*
+class Signature {
+public:
+
+    template<uint8_t... Args>
+    static Signature make(const uint8_t* mapper) {
+        Signature signature;
+        setBits<0, Args...>(mapper, signature);
+        return signature;
+    }
+
+    Signature() {
+        bits[0] = 0x00000000;
+        bits[1] = 0x00000000;
+    }
+
+    Signature(const uint8_t* mapper, std::initializer_list<uint8_t> list) : size_(0) {
+        bits[0] = 0x00000000;
+        bits[1] = 0x00000000;
+        const uint8_t* src = list.begin();
+        for (;;) {
+            if (src == list.end()) break;
+            const uint8_t& value = mapper[*src];
+            bits[value >> 1] |= 0x00000001 << (value & 31);
+            ++src;
+        }
+    }
+
+    bool operator[](uint8_t i) const {
+        return bits[i >> 1] & ( 0x00000001 << (i & 31) );
+    }
+
+    uint32_t staticMask() const {
+        return bits[0];
+    }
+
+    uint32_t dynamicMask() const {
+        return bits[1];
+    }
+
+private:
+    template<uint16_t INDEX, uint8_t C>
+    static void setBits(const uint8_t* mapper, Signature& signature) {
+        const uint8_t* value = mapper[INDEX];
+        signature.bits[value >> 1] |= 0x00000001 << (value & 31);
+    }
+
+    template<uint16_t INDEX, uint8_t C1, uint8_t C2, uint8_t ... Args>
+    static void setBits(const uint8_t* mapper, Signature& signature) {
+        const uint8_t* value = mapper[INDEX];
+        signature.bits[value >> 1] |= 0x00000001 << (value & 31);
+        setBits<INDEX + 1, C2, Args...>(signature);
+    }
+
+    uint32_t bits[2];
+
+};
 */
 
 class Signature;
@@ -552,6 +635,246 @@ private:
 
 
 
+/*
+
+class CpInterface {
+public:
+    class Abstract {
+    private:
+        virtual void move_(Entity::Hash oldHash, Entity::Hash newHash) = 0;
+    public:
+        void move(Entity::Hash oldHash, Entity::Hash newHash) { move_(oldHash, newHash); }
+    };
+
+    template<typename T>
+    class Concrete : public Abstract {
+    private:
+        virtual void move_(Entity::Hash oldHash, Entity::Hash newHash) { move(oldHash, newHash); }
+        T& t_;
+    public:
+        Concrete(T& t) : t_(t) { }
+        void move(Entity::Hash oldHash, Entity::Hash newHash) { std::cout << "RAN DEFAULT!\n";}
+    };
+
+    enum FuncId : uint32_t {
+        Move = 0
+    };
+
+    template<typename T>
+    struct FuncTable {
+        using func_tuple_type = std::tuple<
+            decltype(&T::move)
+        >;
+        constexpr static const func_tuple_type func_tuple = std::make_tuple(
+            &T::move
+        );
+    };
+
+
+    class Any {
+    private:
+        constexpr static const size_t MaxBuffer = 8;
+        uint8_t buffer_[MaxBuffer];
+
+    public:
+        Any() {
+            ASSERT(false);
+        }
+
+        template<typename T>
+        Any(T& t) {
+            ASSERT(sizeof(Concrete<T>) <= MaxBuffer);
+            Abstract* d = new (buffer_) Concrete<T>(t);
+            ASSERT(d - reinterpret_cast<Abstract*>(buffer_) == 0);
+        }
+
+        Abstract* operator->() {
+            return reinterpret_cast<Abstract*>(buffer_);
+        }
+
+    };
+
+    template<typename T>
+    static Concrete<T> make(T& t) {
+        return Concrete<T>(t);
+    }
+
+    template<typename T>
+    static Any make_any(T& t) {
+        return Any(t);
+    }
+
+    template<uint32_t FUNC, typename T, typename... Args>
+    static void loop(T& t, Args... args) {
+        Loop<FUNC, T, Args...>::inner::func(t, args...);
+    }
+
+    template<typename T>
+    static Any make_from_tuple(T& t, uint32_t index) {
+        return AnyTable::table[index](t);
+    }
+
+private:
+    template<uint32_t FUNC, typename T, typename... Args>
+    struct Loop {
+        using tuple_type = T;
+        constexpr static const uint8_t tuple_size = std::tuple_size<tuple_type>::value;
+
+        template<uint32_t INDEX, bool DUMMY = false>
+        struct operations {
+            static void func(T& t, Args... args) {
+                ((make(std::get<INDEX>(t))).*(std::get<FUNC>(CpInterface::FuncTable<Concrete<typename std::tuple_element<INDEX, T>::type>>::func_tuple)))(args...);
+                operations<INDEX + 1>::func(t, args...);
+            }
+            // set table
+        };
+
+        template<bool DUMMY>
+        struct operations<tuple_size - 1, DUMMY> {
+            constexpr static const uint8_t INDEX = tuple_size - 1;
+            static void func(T& t, Args... args) {
+                ((make(std::get<INDEX>(t))).*(std::get<FUNC>(CpInterface::FuncTable<Concrete<typename std::tuple_element<INDEX, T>::type>>::func_tuple)))(args...);
+            }
+            // set table
+        };
+
+        using inner = operations<0>;
+
+    };
+
+
+
+
+
+
+};
+
+template<typename T>
+constexpr const typename CpInterface::AnyTable<T>::func_ptr CpInterface::AnyTable<T>::table = gen_table();
+
+template<typename T>
+constexpr const typename CpInterface::FuncTable<T>::func_tuple_type CpInterface::FuncTable<T>::func_tuple;
+
+*/
+
+class CpInterface {
+protected:
+    virtual void move_(Entity::Hash oldHash, Entity::Hash newHash) = 0;
+
+public:
+    enum FuncId : uint32_t {
+        Move = 0
+    };
+
+    template<typename T>
+    struct FuncTable {
+        using func_tuple_type = std::tuple<
+            decltype(&T::move)
+        >;
+        constexpr static const func_tuple_type func_tuple = std::make_tuple(
+            &T::move
+        );
+    };
+
+    void move(Entity::Hash oldHash, Entity::Hash newHash) { move_(oldHash, newHash); }
+
+};
+
+template<typename T>
+constexpr const typename CpInterface::FuncTable<T>::func_tuple_type CpInterface::FuncTable<T>::func_tuple;
+
+
+
+template<typename T>
+class ConcreteCpInterface : public CpInterface {
+private:
+    virtual void move_(Entity::Hash oldHash, Entity::Hash newHash) { move(oldHash, newHash); }
+
+    T& t_;
+
+public:
+    ConcreteCpInterface(T& t) : t_(t) { }
+
+    void move(Entity::Hash oldHash, Entity::Hash newHash) { /* default is to do nothing... */std::cout << "RAN DEFAULT!\n";}
+
+};
+
+
+class Any {
+private:
+    constexpr static const size_t MaxBuffer = 8;
+    uint8_t buffer_[MaxBuffer];
+
+public:
+    Any() {
+        ASSERT(false);
+    }
+
+    template<typename T>
+    Any(T& t) {
+        ASSERT(sizeof(ConcreteCpInterface<T>) <= MaxBuffer);
+        CpInterface* d = new (buffer_) ConcreteCpInterface<T>(t);
+        ASSERT(d - reinterpret_cast<CpInterface*>(buffer_) == 0);
+    }
+
+    CpInterface* operator->() {
+        return reinterpret_cast<CpInterface*>(buffer_);
+    }
+
+};
+
+
+
+class CpStatic {
+private:
+    template<uint32_t FUNC, typename T, typename... Args>
+    struct Loop {
+        using tuple_type = T;
+        constexpr static const uint8_t tuple_size = std::tuple_size<tuple_type>::value;
+
+        template<uint32_t INDEX, bool DUMMY = false>
+        struct operations {
+            static void func(T& t, Args... args) {
+                ((make_interface(std::get<INDEX>(t))).*(std::get<FUNC>(CpInterface::FuncTable<ConcreteCpInterface<typename std::tuple_element<INDEX, T>::type>>::func_tuple)))(args...);
+                operations<INDEX + 1>::func(t, args...);
+            }
+        };
+
+        template<bool DUMMY>
+        struct operations<tuple_size - 1, DUMMY> {
+            constexpr static const uint8_t INDEX = tuple_size - 1;
+            static void func(T& t, Args... args) {
+                ((make_interface(std::get<INDEX>(t))).*(std::get<FUNC>(CpInterface::FuncTable<ConcreteCpInterface<typename std::tuple_element<INDEX, T>::type>>::func_tuple)))(args...);
+            }
+        };
+
+        using inner = operations<0>;
+
+    };
+
+public:
+    template<uint32_t FUNC, typename T, typename... Args>
+    static void loop(T& t, Args... args) {
+        Loop<FUNC, T, Args...>::inner::func(t, args...);
+    }
+
+    template<typename T>
+    static ConcreteCpInterface<T> make_interface(T& t) {
+        return ConcreteCpInterface<T>(t);
+    }
+
+    template<typename T>
+    static Any make_any_interface(T& t) {
+        return Any(t);
+    }
+
+};
+
+
+
+
+
+
 template<typename T>
 class Ref {
 public:
@@ -597,100 +920,6 @@ private:
     T* ptr_; // pointer
 
 };
-
-
-class BaseInterface {
-protected:
-    virtual void move_(Entity::Hash oldHash, Entity::Hash newHash) = 0;
-
-public:
-    void move(Entity::Hash oldHash, Entity::Hash newHash) { move_(oldHash, newHash); }
-
-};
-
-
-template<typename T>
-class ComponentInterface : public BaseInterface {
-private:
-    virtual void move_(Entity::Hash oldHash, Entity::Hash newHash) { move(oldHash, newHash); }
-
-    T& t_;
-
-public:
-    ComponentInterface(T& t) : t_(t) { }
-
-    void move(Entity::Hash oldHash, Entity::Hash newHash) { /* default is to do nothing... */ }
-
-};
-
-template<typename T>
-ComponentInterface<T> make_interface(T& t) {
-    return ComponentInterface<T>(t);
-}
-
-
-
-
-class Any {
-private:
-    constexpr static const size_t MaxBuffer = 8;
-
-    BaseInterface* base() { return reinterpret_cast<BaseInterface*>(buffer_); }
-
-    uint8_t buffer_[MaxBuffer];
-
-public:
-
-    Any() {
-        ASSERT(false);
-    }
-
-    template<typename T>
-    Any(T& t) {
-        ASSERT(sizeof(ComponentInterface<T>) <= MaxBuffer);
-        BaseInterface* d = new (buffer_) ComponentInterface<T>(t);
-        ASSERT(d - base() == 0);
-    }
-
-    void move(Entity::Hash oldHash, Entity::Hash newHash) { return base()->move(oldHash, newHash); }
-
-};
-
-
-template<typename... Ts>
-struct StaticLoop {
-    using tuple_type = std::tuple<Ts...>;
-    constexpr static const uint8_t tuple_size = std::tuple_size<tuple_type>::value;
-
-    static void move(std::tuple<Ts...>& t, Entity::Hash oldHash, Entity::Hash newHash) {
-        operations<>::move(t, oldHash, newHash);
-    }
-
-    template<uint32_t INDEX = 0, bool DUMMY = false>
-    struct operations {
-        static void move(std::tuple<Ts...>& t, Entity::Hash oldHash, Entity::Hash newHash) {
-            make_interface(std::get<INDEX>(t)).move(oldHash, newHash);
-            std::cout << (int)INDEX << std::endl;
-            operations<INDEX + 1>::move(t, oldHash, newHash);
-        }
-    };
-
-    template<bool DUMMY>
-    struct operations<tuple_size - 1, DUMMY> {
-        constexpr static const uint8_t INDEX = tuple_size - 1;
-        static void move(std::tuple<Ts...>& t, Entity::Hash oldHash, Entity::Hash newHash) {
-            make_interface(std::get<INDEX>(t)).move(oldHash, newHash);
-            std::cout << (int)INDEX << std::endl;
-        }
-    };
-
-};
-
-
-
-
-
-
 
 template<typename T>
 class VectorMap {
@@ -757,15 +986,16 @@ public:
 
 };
 
+
 template<typename T>
-class ComponentInterface<VectorMap<T>> : public BaseInterface {
+class ConcreteCpInterface<VectorMap<T>> : public CpInterface {
 private:
     virtual void move_(Entity::Hash oldHash, Entity::Hash newHash) { move(oldHash, newHash); }
 
     VectorMap<T>& t_;
 
 public:
-    ComponentInterface(VectorMap<T>& t) : t_(t) { }
+    ConcreteCpInterface(VectorMap<T>& t) : t_(t) { }
 
     void move(Entity::Hash oldHash, Entity::Hash newHash) { std::cout << "RAN VECTORMAP!\n"; }
 
@@ -859,8 +1089,13 @@ private:
 template<typename... Ts>
 class State {
 public:
+    using any_func_ptr = decltype( &CpStatic::make_any_interface<int> );
+
     using component_tuple_type = std::tuple<Ts...>;
     using pack_type = std::tuple<typename Ts::value_type...>;
+
+    constexpr static size_t component_count = std::tuple_size<component_tuple_type>::value;
+
 
     State() : signatureManager(Signature()/* pass dynamic signature here! */) { }
 
@@ -877,7 +1112,7 @@ public:
 */
 
     // ReserveSignature  // needs comps
-
+/*
     Entity create() { return entityManager.create(); }
 
     bool valid(Entity entity) const { return entityManager.valid(entity); }
@@ -900,20 +1135,12 @@ public:
 
     template<uint8_t... Args>
     void addSignature(Entity entity) {
-        /*
 
-            newFullSig = oldSig + newSig  // may put this into the THING
-
-
-        */
     }
 
     void destroy(Entity entity) {
         changeSignature<>(entity);
-        /*
-            will have only dynamic now
-            call removeSignature with stored id
-        */
+
         entityManager.destroy(entity);
     }
 
@@ -929,13 +1156,35 @@ public:
     ProxyContainer container(const Signature& signature) {
         return ProxyContainer(signature);
     }
-
+*/
     void test_loop() {
-        StaticLoop<Ts...>::move(pack, Entity::Hash(), Entity::Hash());
+        //StaticLoopHelper<Ts...>::move(pack, Entity::Hash(), Entity::Hash());
+        //StaticLoopHelper<Ts...>::inner::move(pack, Entity::Hash(), Entity::Hash());
+
+        //StaticLoop::move(pack, Entity::Hash(), Entity::Hash());
+
+        //static_loop<&CpInterface::move>(pack, Entity::Hash() );
+
+        //static_loop<CpFuncId::Move>(pack, Entity::Hash(), Entity::Hash());
+
+        CpStatic::loop<CpInterface::Move>(pack, Entity::Hash(), Entity::Hash());
+
     }
 
 private:
 
+    template <class T, class Tuple>
+    struct TupleTypeIndex;
+
+    template <class T, class... Types>
+    struct TupleTypeIndex<T, std::tuple<T, Types...>> {
+        static const std::size_t value = 0;
+    };
+
+    template <class T, class U, class... Types>
+    struct TupleTypeIndex<T, std::tuple<U, Types...>> {
+        static const std::size_t value = 1 + TupleTypeIndex<T, std::tuple<Types...>>::value;
+    };
 
 
     SignatureManager signatureManager;
