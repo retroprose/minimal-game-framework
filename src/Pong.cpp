@@ -7,6 +7,7 @@
 #include <SFML/Audio.hpp>
 #include <Math.hpp>
 #include <Entity.hpp>
+#include <Container.hpp>
 
 #include<fstream>
 
@@ -94,6 +95,7 @@ public:
 };
 */
 
+
 enum CpType : uint8_t {
     Body = 0,
     Color,
@@ -104,13 +106,13 @@ enum CpType : uint8_t {
 
 using MyState = State<
     VectorMap<Cp::Body>,
-    VectorMap<Cp::Color>
-    //EntityMap<Cp::Controller>,
-    //EntityMap<Cp::Color>
+    VectorMap<Cp::Color>,
+    EntityMap<Cp::Controller>,
+    EntityMap<Cp::Color>
 >;
 
 
-
+/*
 void test_func(Signature::Id id) {
     std::cout << "RAN ID\n";
 }
@@ -125,7 +127,468 @@ void print_sig(const Signature& s) {
     }
     std::cout << std::endl;
 }
+*/
 
+/*
+template <int ... Ns> struct sequence {};
+using sequence_t = sequence<0, 1, 2, 3, 4, 5>;
+
+template<uint8_t... C, class T = sequence<C...>>
+void printSeq() {
+    std::cout << sizeof...(C) << std::endl;
+}
+
+
+template<std::size_t SIZE>
+struct billy {
+    std::size_t size = SIZE;
+};
+
+template <template<std::size_t> typename T, std::size_t K>
+std::size_t extractSize(const T<K>&) {
+    return K;
+}
+*/
+
+/*
+    abstract
+
+    default
+
+    derived<T>
+
+    template<T>
+    final : public derived<T>
+
+*/
+
+struct PPack {
+    std::string text;
+};
+
+class Abstract {
+protected:
+    virtual void print_(const PPack& p) = 0;
+
+public:
+    void print(const PPack& p) { this->print_(p); }
+
+};
+
+class Default : public Abstract {
+protected:
+    void print_(const PPack& p) { std::cout << "I DONT GET RUN!" << std::endl; }
+
+public:
+    enum FuncId : uint32_t {
+        Print = 0
+    };
+
+    void print(const PPack& p) { std::cout << "I AM DEFUALT!" << std::endl; }
+
+};
+
+
+// specialize this class!
+template<typename T>
+class Derived : public Default {
+public:
+    Derived(T& t) { }
+
+};
+
+template<typename T>
+class Leaf : public Derived<T> {
+private:
+    virtual void print_(const PPack& p) { this->print(p); }
+
+public:
+    Leaf(T& t) : Derived<T>(t) { }
+
+    using func_tuple_type = std::tuple<
+        decltype(&Leaf::print)
+    >;
+    constexpr static const func_tuple_type func_tuple = std::make_tuple(
+        &Leaf::print
+    );
+
+};
+
+template<typename T>
+constexpr const typename Leaf<T>::func_tuple_type Leaf<T>::func_tuple;
+
+
+class Any {
+private:
+    constexpr static const size_t MaxBuffer = 8;
+    uint8_t buffer_[MaxBuffer];
+
+    Abstract* base() { reinterpret_cast<Abstract*>(buffer_); }
+public:
+    Any() {
+        ASSERT(false);
+    }
+
+    template<typename T>
+    Any(T& t) {
+        ASSERT(sizeof(Leaf<T>) <= MaxBuffer);
+        Abstract* d = new (buffer_) Leaf<T>(t);
+        ASSERT(d - reinterpret_cast<Abstract*>(buffer_) == 0);
+    }
+
+    //Abstract* operator->() {
+    //    return reinterpret_cast<Abstract*>(buffer_);
+    //}
+
+    void print(const PPack& p) { base()->print(p); }
+};
+
+
+template<>
+class Derived<int> : public Default {
+private:
+    int& r_;
+
+public:
+    Derived(int& r) : r_(r) { }
+
+    void print(const PPack& p) { std::cout << "I AM AN INT! " << r_ << " " << p.text << std::endl; }
+};
+
+template<>
+class Derived<float> : public Default {
+private:
+    float& r_;
+
+public:
+    Derived(float& r) : r_(r) { }
+
+    void print(const PPack& p) { std::cout << "I AM AN FLOAT! " << r_ << std::endl; }
+};
+
+template<>
+class Derived<char> : public Default {
+public:
+    Derived(char& t) { }
+
+};
+
+template<typename T>
+Leaf<T> make_leaf(T& t) {
+    return Leaf<T>(t);
+}
+
+template<uint32_t FUNC, typename T, typename P>
+void call_func(T& t, const P& p) {
+    ((Leaf<T>(t)).*(std::get<FUNC>(Leaf<T>::func_tuple)))(p);
+}
+
+
+template<uint8_t... Args>
+struct int8_sequence { };
+
+using int8_seq = int8_sequence<2,3,1>;
+
+/*
+template<typename T>
+void t_print(T& t, const PPack& p) {
+    std::cout << p.text << std::endl;
+    std::cout << "DEFAULT, NOT CALLED" << std::endl;
+}
+
+template<typename T, typename X = typename typeof()>
+void t_print(T& t, const PPack& p) {
+    std::cout << p.text << std::endl;
+    t.print(p);
+}
+*/
+
+
+//template<typename T>
+//auto t_print(T& t, const PPack& p) -> decltype(t.print(p), void()) {
+//}
+
+/*
+#define HAS_MEM_FUNC(func, name)                                        \
+    template<typename T, typename Sign>                                 \
+    struct name {                                                       \
+        typedef char yes[1];                                            \
+        typedef char no [2];                                            \
+        template <typename U, U> struct type_check;                     \
+        template <typename _1> static yes &chk(type_check<Sign, &_1::func > *); \
+        template <typename   > static no  &chk(...);                    \
+        static bool const value = sizeof(chk<T>(0)) == sizeof(yes);     \
+    }
+
+template<bool C, typename T = void>
+struct enable_if {
+  typedef T type;
+};
+
+template<typename T>
+struct enable_if<false, T> { };
+
+HAS_MEM_FUNC(toString, has_to_string);
+
+template<typename T>
+typename enable_if< has_to_string<T, std::string(T::*)()>::value, std::string >::type
+doSomething(T * t) {
+   // something when T has toString ...
+   return t->toString();
+}
+
+template<typename T>
+typename enable_if<!has_to_string<T, std::string(T::*)()>::value, std::string>::type
+doSomething(T * t) {
+   // something when T doesnt have toString ...
+   return "T::toString() does not exist.";
+}
+*/
+
+/*
+template<typename T>                                void printSeq(T& t) { }
+template<uint8_t C, uint8_t ... Args, typename T>   void printSeq(T& t) {
+    PPack p;
+    p.text = "TEST IT OUT!";
+    make_leaf(std::get<C>(t)).print(p);
+    printSeq<Args...>(t);
+}
+
+
+
+template<typename T, uint8_t...Args>
+void do_something(T t, int8_sequence<Args...>) {
+    printSeq<Args...>(t);
+}
+*/
+
+
+
+
+template<typename T>
+void do_something(T& t, int8_sequence<>) { }
+template<typename T, uint8_t C, uint8_t...Args>
+void do_something(T& t, int8_sequence<C, Args...>) {
+    PPack p;
+    p.text = "TEST IT OUT!";
+    make_leaf(std::get<C>(t)).print(p);
+    do_something(t, int8_sequence<Args...>());
+}
+
+
+struct TA { TA(int x) : x_(x) {} int x_; void print() { std::cout << "TA: " << x_ << std::endl; } };
+struct TB { TB(int x) : x_(x) {} int x_;  };
+struct TC { TC(int x) : x_(x) {} int x_; void print() { std::cout << "TC: " << x_ << std::endl; } };
+struct TD { TD(int x) : x_(x) {} int x_;  };
+using TT = std::tuple<TA, TB, TC, TD>;
+
+template<typename T> struct is_in_;
+
+template<typename T> struct is_in_ { constexpr static const bool value = false; };
+template<> struct is_in_<TA> { constexpr static const bool value = true; };
+template<> struct is_in_<TB> { constexpr static const bool value = false; };
+template<> struct is_in_<TC> { constexpr static const bool value = true; };
+
+template<typename T>
+using is_in = is_in_<T>;
+
+template<typename T> struct is_out;
+
+template<typename T> struct is_out { constexpr static const bool value = true; };
+template<> struct is_out<TA> { constexpr static const bool value = false; };
+template<> struct is_out<TB> { constexpr static const bool value = true; };
+template<> struct is_out<TC> { constexpr static const bool value = false; };
+
+
+
+
+
+// This is the type which holds sequences
+template <int ... Ns> struct sequence {};
+
+// First define the template signature
+template <int ... Ns> struct seq_gen;
+
+// Recursion case
+template <int I, int ... Ns>
+struct seq_gen<I, Ns...>
+{
+    // Take front most number of sequence,
+    // decrement it, and prepend it twice.
+    // First I - 1 goes into the counter,
+    // Second I - 1 goes into the sequence.
+    using type = typename seq_gen<I - 1, I - 1, Ns...>::type;
+};
+
+// Recursion abort
+template <int ... Ns>
+struct seq_gen<0, Ns...>
+{
+    using type = sequence<Ns...>;
+};
+
+
+template <int N>
+using sequence_t = typename seq_gen<N>::type;
+
+
+/*
+// THIS WORKS!
+
+// First define the template signature
+template <typename T, int ... Ns> struct seq_gen_2;
+template <typename T, bool ADD, int I, int ... Ns> struct sequence_gen_helper;
+
+// Recursion case
+template <typename T, int I, int ... Ns>
+struct seq_gen_2<T, I, Ns...>
+{
+    // Take front most number of sequence,
+    // decrement it, and prepend it twice.
+    // First I - 1 goes into the counter,
+    // Second I - 1 goes into the sequence.
+    using type = typename sequence_gen_helper<T, is_in<typename std::tuple_element<I - 1, T>::type>::value, I, Ns...>::type;
+};
+
+// Recursion abort
+template <typename T, int ... Ns>
+struct seq_gen_2<T, 0, Ns...>
+{
+    using type = sequence<Ns...>;
+};
+
+template <typename T, int I, int ... Ns>
+struct sequence_gen_helper<T, true, I, Ns...> {
+    using type = typename seq_gen_2<T, I - 1, I - 1, Ns...>::type;
+};
+
+template <typename T, int I, int ... Ns>
+struct sequence_gen_helper<T, false, I, Ns...> {
+    using type = typename seq_gen_2<T, I - 1, Ns...>::type;
+};
+
+template <typename T>
+using sequence_t_2 = typename seq_gen_2<T, std::tuple_size<T>::value>::type;
+*/
+
+
+// First define the template signature
+template <template<typename> typename W, typename T, int ... Ns > struct seq_gen_2;
+template <template<typename> typename W, typename T, bool ADD, int I, int ... Ns> struct sequence_gen_helper;
+
+// Recursion case
+template <template<typename> typename W, typename T, int I, int ... Ns>
+struct seq_gen_2<W, T, I, Ns...>
+{
+    // Take front most number of sequence,
+    // decrement it, and prepend it twice.
+    // First I - 1 goes into the counter,
+    // Second I - 1 goes into the sequence.
+    using type = typename sequence_gen_helper<W, T, W<typename std::tuple_element<I - 1, T>::type>::value, I, Ns...>::type;
+};
+
+// Recursion abort
+template <template<typename> typename W, typename T, int ... Ns>
+struct seq_gen_2<W, T, 0, Ns...>
+{
+    using type = sequence<Ns...>;
+};
+
+template <template<typename> typename W, typename T, int I, int ... Ns>
+struct sequence_gen_helper<W, T, true, I, Ns...> {
+    using type = typename seq_gen_2<W, T, I - 1, I - 1, Ns...>::type;
+};
+
+template <template<typename> typename W, typename T, int I, int ... Ns>
+struct sequence_gen_helper<W, T, false, I, Ns...> {
+    using type = typename seq_gen_2<W, T, I - 1, Ns...>::type;
+};
+
+template<template<typename> typename W, typename T>
+using sequence_t_2 = typename seq_gen_2<W, T, std::tuple_size<T>::value>::type;
+
+
+
+
+
+template<bool DUMMY = false>
+void print_sequence(sequence<>) { }
+template<bool DUMMY = false, int C, int...Args>
+void print_sequence(sequence<C, Args...>) {
+    std::cout << (int)C << ", ";
+    print_sequence(sequence<Args...>());
+}
+
+static void func2(int i, float f, double d)
+{
+    std::cout << i << ", " << f << ", " << d << '\n';
+}
+
+static void func(double d, float f, int i)
+{
+    std::cout << d << ", " << f << ", " << i << '\n';
+}
+
+// The following code passes all parameters by
+// value, for the sake of simplicity
+template <typename F, typename TUP, int ... INDICES>
+static void tuple_call_(F f, TUP tup, sequence<INDICES...>)
+{
+    f(std::get<INDICES>(tup) ...);
+}
+
+//template <typename F, typename ... Ts>
+//static void tuple_call(F f, std::tuple<Ts...> tup)
+//{
+//    tuple_call_(f, tup, sequence_t<sizeof...(Ts)>{});
+//}
+
+
+template<typename T>
+void is_in_loop(T& t) { }
+template<int C, int...Args, typename T>
+void is_in_loop(T& t) {
+    std::cout << (int)(is_in<typename std::tuple_element<C, T>::type>::value) << ", ";
+    is_in_loop<Args...>(t);
+}
+
+
+/*
+using test_tuple_type = std::tuple<int, float, char>;
+
+auto test_tuple = std::make_tuple(12, 4.5, 'g');
+
+template<typename T>
+generic_function(T& t) {
+    std::cout << typeid(T).name() << ": " << t << "  GENERIC!" << std::endl;
+}
+
+template<typename T>
+generic_function2(T& t) {
+    std::cout << typeid(T).name() << ": " << t << "  GENERIC NO 2!" << std::endl;
+}
+
+
+template<typename F, uint8_t C, typename T>
+void printSeq(T& t) {
+    F( std::get<C>(t) );
+}
+
+template<typename F, uint8_t C1, uint8_t C2, uint8_t ... Args, typename T>
+void printSeq(T& t) {
+    F( std::get<C1>(t) );
+    printSeq<C2, Args...>(t);
+}
+*/
+
+
+
+//template<sequence<uint8_t C1, uint8_t C2, uint8_t ... Args>>
+//template<uint8_t C1, uint8_t C2, uint8_t ... Args>
+//void printSeq() {
+//    std::cout << (int)C1 << std::endl;
+//    printSeq<sequence<C2, Args...>>();
+//}
 
 ////////////////////////////////////////////////////////////
 /// Entry point of application
@@ -135,12 +598,77 @@ void print_sig(const Signature& s) {
 ////////////////////////////////////////////////////////////
 int main()
 {
+    //func(1.0, 2.0, 3);
 
-    //test_func({Body, Color});
+    std::tuple<double, float, int> tup {1.0, 2.0, 3};
+    //tuple_call(func, tup); // same effect
+
+    //tuple_call_(func2, tup, sequence<2,1,0>());
+
+    print_sequence( sequence_t_2<is_in, TT>() );    std::cout << std::endl;
+    print_sequence( sequence_t_2<is_out, TT>() );   std::cout << std::endl;
+
+
+    PPack p;
+    p.text = "HELLO WORLD";
+
+    int a = 4;
+    int b = 5;
+    float c = 1.5;
+    char d = 'f';
+
+    using test_tuple_type = decltype(std::make_tuple(4, 5, 1.5f, 'f'));
+    auto test_tuple = std::make_tuple(4, 5, 1.5f, 'f');
+
+    TT tt = std::make_tuple(1, 4, 6, 4);
+
+    //do_something(test_tuple, int8_sequence<2,1,3>());
+
+    //print_sequence( sequence<2,1,3>() );
+    //is_in_loop<0, 1, 2, 3>(tt);
+
+    //t_print(std::get<0>(tt), p);
+    //t_print(std::get<1>(tt), p);
+    //t_print(std::get<2>(tt), p);
+    //t_print(std::get<3>(tt), p);
+
+    auto test_a = make_leaf(a);
+    auto test_b = make_leaf(b);
+    auto test_c = make_leaf(c);
+    auto test_d = make_leaf(d);
+
+    //std::cout << "test a: "; test_a.print(p); std::cout << std::endl;
+    //std::cout << "test b: "; test_b.print(p); std::cout << std::endl;
+    //std::cout << "test c: "; test_c.print(p); std::cout << std::endl;
+    //std::cout << "test d: "; test_d.print(p); std::cout << std::endl;
+
+    //std::cout << "test a: "; call_func<Default::Print>(a, p); std::cout << std::endl;
+    //std::cout << "test b: "; call_func<Default::Print>(b, p); std::cout << std::endl;
+    //std::cout << "test c: "; call_func<Default::Print>(c, p); std::cout << std::endl;
+    //std::cout << "test d: "; call_func<Default::Print>(d, p); std::cout << std::endl;
+
+    Any test_any[4] = { Any(a), Any(b), Any(c), Any(d) };
+
+    for (int i = 0; i < 4; ++i) {
+        //std::cout << "test any: "; test_any[i].print(p); std::cout << std::endl;
+    }
+
+    //printSeq(test_tuple, int8_sequence<2,1,3>());
+
+    //do_something(test_tuple, int8_seq());
+
+    //printSeq<int,0,2,1>(test_tuple, args);
 
     MyState state;
 
-    state.test_loop();
+
+   //printSeq<sequence<3>>();
+
+
+    //state.test_loop();
+
+
+    //std::cout << MyState::activeIndex << " active, entity " << MyState::entityIndex << std::endl;
 
 
     // Define some constants
