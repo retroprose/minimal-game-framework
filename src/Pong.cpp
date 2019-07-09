@@ -377,9 +377,9 @@ void do_something(T& t, int8_sequence<C, Args...>) {
 
 
 struct TA { TA(int x) : x_(x) {} int x_; void print() { std::cout << "TA: " << x_ << std::endl; } };
-struct TB { TB(int x) : x_(x) {} int x_; void print(int y) { std::cout << "TA: " << x_ << ", " << y << std::endl; } };
+struct TB { TB(int x) : x_(x) {} int x_; void eat() { std::cout << "TB: EATING" << std::endl; } };
 struct TC { TC(int x) : x_(x) {} int x_; void print() { std::cout << "TC: " << x_ << std::endl; } };
-struct TD { TD(int x) : x_(x) {} int x_;  };
+struct TD { TD(int x) : x_(x) {} int x_; void eat() { std::cout << "TD: EATING" << std::endl; } };
 using TT = std::tuple<TA, TB, TC, TD>;
 
 template<typename T> struct is_in_;
@@ -509,25 +509,6 @@ using sequence_t_2 = typename seq_gen_2<W, T, std::tuple_size<T>::value>::type;
 
 
 
-
-
-
-
-template<typename T>
-using print_ptr = void (T::*)();
-
-template<typename T>
-struct has_print {
-    template <typename U, U> struct type_check;
-    template <typename _1> static uint16_t &chk(type_check<print_ptr<_1>, &_1::print> *);
-    //template <typename _1> static uint16_t &chk(type_check<decltype(&_1::print), &_1::print> *);
-    //template <typename _1> static uint16_t &chk(type_check<decltype(&_1::print), &_1::print> *);
-    //template <typename _1> static uint16_t &chk(void (_1::*)() = &_1::print);
-    template <typename   > static  uint8_t &chk(...);
-    static bool const value = sizeof(chk<T>(0)) == sizeof(uint16_t);
-};
-
-
 template<bool C, typename T = void>
 struct enable_if {
   typedef T type;
@@ -536,37 +517,38 @@ struct enable_if {
 template<typename T>
 struct enable_if<false, T> { };
 
-
-template<typename T>
-typename enable_if<has_print<T>::value/*, return type*/>::type doPrint(T& t) {
-    t.print(); std::cout << std::endl;
+template<template<typename> typename F, typename T>
+void doLoop(T& t, sequence<>) { }
+template<template<typename> typename F, typename T, int C, int...Args>
+void doLoop(T& t, sequence<C, Args...>) {
+    //F<T>(std::get<C>(t));
+    //F<typename std::tuple_element<C, T>::type>()(std::get<C>(t));
+    F<typename std::tuple_element<C, T>::type>::invoke(std::get<C>(t));
+    //doPrint(std::get<C>(t));
+    doLoop<F>(t, sequence<Args...>());
 }
 
-template<typename T>
-typename enable_if<!has_print<T>::value/*, return type*/>::type doPrint(T& t) {
-    std::cout << "DEFAULT!" << std::endl;
-}
+
 
 template<typename T>
 struct doPrintStruct {
-    static void invoke(T& t){
-        doPrint<T>(t);
+    template <typename U, U> struct type_check;
+    template <typename _1> static uint16_t &chk(type_check<void (_1::*)(), &_1::print> *);
+    template <typename   > static  uint8_t &chk(...);
+    static bool const value = sizeof(chk<T>(0)) == sizeof(uint16_t);
+
+    template<typename _1> static typename enable_if<doPrintStruct<_1>::value/*, return type*/>::type invoke(_1& t) {
+        t.print(); std::cout << std::endl;
+    }
+
+    template<typename _1> static typename enable_if<!doPrintStruct<_1>::value/*, return type*/>::type invoke(_1& t) {
+        std::cout << "DEFAULT!" << std::endl;
     }
 };
 
 
 
 
-
-template<template<typename> typename F, typename T>
-void doLoop(T& t, sequence<>) { }
-template<template<typename> typename F, typename T, int C, int...Args>
-void doLoop(T& t, sequence<C, Args...>) {
-    //F<T>(std::get<C>(t));
-    F<typename std::tuple_element<C, T>::type>::invoke(std::get<C>(t));
-    //doPrint(std::get<C>(t));
-    doLoop<F>(t, sequence<Args...>());
-}
 
 
 
@@ -689,7 +671,10 @@ int main()
 
     //doLoop<doPrintStruct>(tt, sequence<0, 1, 2, 3>());
 
+    //doLoop<doPrintStruct>(tt, sequence<0, 1, 2, 3>());
+
     doLoop<doPrintStruct>(tt, sequence<0, 1, 2, 3>());
+
 
     //do_something(test_tuple, int8_sequence<2,1,3>());
 
