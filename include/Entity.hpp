@@ -47,6 +47,81 @@
 
 
 
+struct Sequence {
+private:
+    template<uint8_t... Ns>
+    struct MakeHelper { };
+
+    template<uint8_t H, uint8_t... Ns>
+    struct MakeHelper<H, Ns...> {
+        static const uint8_t head = H;
+        using tail = MakeHelper<Ns...>;
+    };
+
+    template <uint8_t APPEND, typename TAIL, uint8_t...Ns>
+    struct AppendBack {
+        using type = typename AppendBack<APPEND, typename TAIL::tail, Ns..., TAIL::head>::type;
+    };
+
+    template <uint8_t APPEND, uint8_t...Ns>
+    struct AppendBack<APPEND, MakeHelper<>, Ns...> {
+        using type = MakeHelper<Ns..., APPEND>;
+    };
+
+    template<bool ADD, uint8_t HEAD, typename S>
+    struct IfCond;
+
+    template<uint8_t HEAD, typename S>
+    struct IfCond<true, HEAD, S> {
+        using type = typename AppendBack<HEAD, S>::type;
+    };
+
+    template<uint8_t HEAD, typename S>
+    struct IfCond<false, HEAD, S> {
+        using type = S;
+    };
+
+    template <template<typename> typename W, typename T, typename IS, typename OS = MakeHelper<>>
+    struct RemoveIf {
+        using type = typename RemoveIf<W, T, typename IS::tail, typename IfCond<W<typename std::tuple_element<IS::head, T>::type>::value, IS::head, OS>::type>::type;
+    };
+
+    template <template<typename> typename W, typename T, typename OS>
+    struct RemoveIf<W, T, MakeHelper<>, OS> {
+        using type = OS;
+    };
+
+    template<uint8_t N, uint8_t I = 0, typename OS = MakeHelper<>>
+    struct RangeHelper {
+        using type = typename RangeHelper<N, I + 1, typename AppendBack<I, OS>::type>::type;
+    };
+
+    template <uint8_t N, typename OS>
+    struct RangeHelper<N, N, OS> {
+        using type = OS;
+    };
+
+public:
+    template<uint8_t... Ns>
+    using Make = MakeHelper<Ns...>;
+
+
+    template<uint8_t N>
+    using Range0 = typename RangeHelper<N>::type;
+
+    template<uint8_t I, uint8_t N>
+    using Range = typename RangeHelper<N, I>::type;
+
+
+    template <template<typename> typename W, typename T, typename IS = typename Range0<std::tuple_size<T>::value>::type, typename OS = MakeHelper<>>
+    using Remove = typename RemoveIf<W, T, IS>::type;
+
+    template<typename S, uint8_t V>
+    using PushBack = typename AppendBack<V, S>::type;
+
+};
+
+
 
 class Signature {
 public:

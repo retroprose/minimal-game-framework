@@ -135,84 +135,6 @@ template<> struct is_TB<TB> { constexpr static const bool value = true; };
 
 
 
-template<uint8_t... Ns>
-struct Sequence { };
-
-
-struct SequenceGen {
-    //
-    //
-    //  GENERATES SEQUENCE FROM 0 to N
-    //
-    //
-    // First define the template signature
-    template <uint8_t ... Ns> struct FromRangeHelper;
-
-    // Recursion case
-    template <uint8_t I, uint8_t ... Ns>
-    struct FromRangeHelper<I, Ns...>
-    {
-        using type = typename FromRangeHelper<I - 1, I - 1, Ns...>::type;
-    };
-
-    // Recursion abort
-    template <uint8_t ... Ns>
-    struct FromRangeHelper<0, Ns...>
-    {
-        using type = Sequence<Ns...>;
-    };
-
-    template <uint8_t N>
-    using FromRange = typename FromRangeHelper<N>::type;
-
-    template <typename T>
-    using TupleRange = typename FromRangeHelper<std::tuple_size<T>::value>::type;
-
-
-    //
-    //
-    //  GENERATES SEQUENCE BASED ON CONDITION OF TUPLE ELEMENTS
-    //
-    //
-    // First define the template signature
-    template <template<typename> typename W, typename T, uint8_t ... Ns > struct FromCondition;
-    template <template<typename> typename W, typename T, bool ADD, uint8_t I, uint8_t ... Ns> struct FromConditionHelper;
-
-    // Recursion case
-    template <template<typename> typename W, typename T, uint8_t I, uint8_t ... Ns>
-    struct FromCondition<W, T, I, Ns...>
-    {
-        using type = typename FromConditionHelper<W, T, W<typename std::tuple_element<I - 1, T>::type>::value, I, Ns...>::type;
-    };
-
-    // Recursion abort
-    template <template<typename> typename W, typename T, uint8_t ... Ns>
-    struct FromCondition<W, T, 0, Ns...>
-    {
-        using type = Sequence<Ns...>;
-    };
-
-    // helpers allow to omit values that don't match condition
-    template <template<typename> typename W, typename T, uint8_t I, uint8_t ... Ns>
-    struct FromConditionHelper<W, T, true, I, Ns...> {
-        using type = typename FromCondition<W, T, I - 1, I - 1, Ns...>::type;
-    };
-
-    template <template<typename> typename W, typename T, uint8_t I, uint8_t ... Ns>
-    struct FromConditionHelper<W, T, false, I, Ns...> {
-        using type = typename FromCondition<W, T, I - 1, Ns...>::type;
-    };
-
-    template<template<typename> typename W, typename T>
-    using TupleCondition = typename FromCondition<W, T, std::tuple_size<T>::value>::type;
-
-};
-
-/*
-
-
-
-*/
 
 
 
@@ -228,16 +150,16 @@ private:
 
 public:
     template<template<typename> typename F, typename T>
-    static void loop(T& t, Sequence<>) { }
+    static void loop(T& t, Sequence::Make<>) { }
     template<template<typename> typename F, typename T, uint8_t C, uint8_t...Args>
-    static void loop(T& t, Sequence<C, Args...>) {
+    static void loop(T& t, Sequence::Make<C, Args...>) {
         F<typename std::tuple_element<C, T>::type>::invoke(std::get<C>(t));
-        loop<F>(t, Sequence<Args...>());
+        loop<F>(t, Sequence::Make<Args...>());
     }
 
     template<template<typename> typename F, typename T>
     static void loop(T& t) {
-        loop<F>(t, SequenceGen::TupleCondition<F, T>());
+        loop<F>(t, Sequence::Remove<F, T>());
     }
 
 
@@ -321,278 +243,13 @@ private:
 
 
 
-template<bool DUMMY = false>
-void print_sequence(Sequence<>) { }
-template<bool DUMMY = false, uint8_t C, uint8_t...Args>
-void print_sequence(Sequence<C, Args...>) {
-    std::cout << (int)C << ", ";
-    print_sequence(Sequence<Args...>());
-}
-
-
-
-//
-//
-//  GENERATES SEQUENCE FROM 0 to N
-//
-//
-// First define the template signature
-
-/*
-template <typename S, bool ADD>
-struct AddIfCondition;
-
-template <typename S>
-struct AddIfCondition<S, true> {
-    using type = S;
-};
-
-template <typename S>
-struct AddIfCondition<S, false> {
-    using type = S::tail;
-};
-*/
-
-// 3, 5, 6, 8     4        5, 6, 8    3     4
-
-
-template<uint8_t... Ns>
-struct TestSeq {
-    using tail = TestSeq<>;
-};
-
-template<uint8_t H, uint8_t... Ns>
-struct TestSeq<H, Ns...> {
-    static const uint8_t head = H;
-    using tail = TestSeq<Ns...>;
-};
-
-
-template <uint8_t APPEND, typename TAIL, uint8_t...Ns>
-struct AppendBack {
-    using type = typename AppendBack<APPEND, typename TAIL::tail, Ns..., TAIL::head>::type;
-};
-
-template <uint8_t APPEND, uint8_t...Ns>
-struct AppendBack<APPEND, TestSeq<>, Ns...> {
-    using type = TestSeq<Ns..., APPEND>;
-};
-
-
-template<bool ADD, uint8_t HEAD, typename S>
-struct IfCond;
-
-template<uint8_t HEAD, typename S>
-struct IfCond<true, HEAD, S> {
-    using type = typename AppendBack<HEAD, S>::type;
-};
-
-template<uint8_t HEAD, typename S>
-struct IfCond<false, HEAD, S> {
-    using type = S;
-};
-
-
-
-template <template<typename> typename W, typename T, typename IS, typename OS = TestSeq<>>
-struct TestSeqCpy {
-    using type = typename TestSeqCpy<W, T, typename IS::tail, typename IfCond<W<typename std::tuple_element<IS::head, T>::type>::value, IS::head, OS>::type>::type;
-};
-
-template <template<typename> typename W, typename T, typename OS>
-struct TestSeqCpy<W, T, TestSeq<>, OS> {
-    using type = OS;
-};
-
-
-template <uint8_t N, uint8_t I = 0, typename OS = TestSeq<>>
-struct MakeSeq {
-    using type = typename MakeSeq<N, I + 1, typename AppendBack<I, OS>::type>::type;
-};
-
-template <uint8_t N, typename OS>
-struct MakeSeq<N, N, OS> {
-    using type = OS;
-};
-
-/*
-template <typename IS, typename OS>
-struct TestSeqCpy {
-    using type = typename TestSeqCpy<typename IS::tail, typename AppendBack<IS::head, OS>::type>::type;
-};
-
-template <typename OS>
-struct TestSeqCpy<TestSeq<>, OS> {
-    using type = OS;
-};
-*/
-
-/*
-template <typename S, uint8_t...Ns>
-struct TestSeqCpy {
-    using type = typename TestSeqCpy<typename S::tail, Ns..., S::head>::type;
-};
-
-template <uint8_t...Ns>
-struct TestSeqCpy<TestSeq<>, Ns...> {
-    using type = TestSeq<Ns...>;
-};
-
-
-template <typename IS, typename OS>
-struct TestSeqCpy2 {
-    using type = typename TestSeqCpy<typename S::tail, Ns..., S::head>::type;
-};
-
-template <typename IS, typename OS>
-struct TestSeqCpy2<TestSeq<>, OS> {
-    using type = TestSeqCpy<;
-};
-*/
-
-/*
-template <typename S, uint8_t...Ns>
-struct StripSeq {
-    using type = typename TestSeqHelper<typename S::tail, Ns..., S::head>::type;
-};
-
-template <uint8_t...Ns>
-struct StripSeq<TestSeq<>, Ns...> {
-    using type = TestSeq<Ns...>;
-};
-*/
-
-/*
-template <template<typename> typename W, typename T, bool ADD, typename S, uint8_t...Ns>
-struct TestSeqHelper { };
-
-template <template<typename> typename W, typename T, typename S, uint8_t...Ns>
-struct TestSeqHelper<W, T, true, S, Ns...> {
-    using type = typename TestSeqHelper<W, T, W<typename std::tuple_element<S::head, T>::type>::value, typename S::tail, Ns..., S::head>::type;
-};
-
-template <template<typename> typename W, typename T, typename S, uint8_t...Ns>
-struct TestSeqHelper<W, T, false, S, Ns...> {
-    using type = typename TestSeqHelper<W, T, W<typename std::tuple_element<S::head, T>::type>::value, typename S::tail, Ns...>::type;
-};
-
-template <template<typename> typename W, typename T, typename S, uint8_t...Ns>
-struct TestSeqHelper<W, T, false, TestSeq<>, Ns...> {
-    using type = TestSeq<Ns...>;
-};
-*/
-
-
-/*
-template<uint8_t HEAD, typename TAIL>
-struct SmartSequence {
-    static const uint8_t head = HEAD;
-    using tail = TAIL;
-};
-
-template <template<typename> typename W, typename T, uint8_t... Ns>
-struct SmartFromRange {
-    using type = void;
-};
-
-template <template<typename> typename W, typename T, bool ADD, uint8_t... Ns>
-struct SmartFromRangeHelper;
-
-template <template<typename> typename W, typename T, uint8_t I, uint8_t... Ns>
-struct SmartFromRangeHelper<W, T, true, I, Ns...> {
-    using type = SmartSequence<I, typename SmartFromRange<Ns...>::type>;
-};
-
-template <template<typename> typename W, typename T, uint8_t... Ns>
-struct SmartFromRangeHelper<W, T, false, Ns...> {
-    using type = typename SmartFromRange<Ns...>::type;
-};
-
-//template<uint8_t I, uint8_t...Ns>
-//struct SmartFromRange<I, Ns...> {
-//    using type = SmartSequence<I, typename SmartFromRange<Ns...>::type>;
-//};
-
-template <template<typename> typename W, typename T, uint8_t I, uint8_t... Ns>
-struct SmartFromRange<W, T, I, Ns...> {
-    using type = typename SmartFromRangeHelper<W, T, W<typename std::tuple_element<I, T>::type>::value, I, Ns...>::type;
-};
-*/
-
-/*
-template<uint8_t HEAD, uint8_t... Ns>
-struct SmartSequence {
-    constexpr static uint8_t head = HEAD;
-    constexpr static uint8_t tail[] = { Ns... };
-};
-
-template<>
-struct SmartSequence<> { };
-*/
-
-/*
-template<typename TAIL, uint8_t HEAD>
-struct SmartSequence<TAIL, HEAD> {
-    static const uint8_t head = HEAD;
-    using tail = TAIL;
-};
-*/
-
-//template <template<typename> typename W, typename T, typename S, uint8_t...Ns>
-//struct GenSmartSequence;
-
-//template <template<typename> typename W, bool B, typename T, typename S>
-//struct GenSmartSequenceHelper;
-
-//template <template<typename> typename W, typename T, typename S, uint8_t...Ns>
-//struct GenSmartSequence {
-//    using type = typename GenSmartSequence<W, T, I - 1, I - 1, Ns...>::type;
-//};
-/*
-// Recursion case
-template <template<typename> typename W, typename T, typename IS, typename OS>
-struct GenSmartSequence
-{
-    using type = typename GenSmartSequence<W, T, typename IS::tail, SmartSequence<IS::head, OS>>::type;
-};
-
-// Recursion abort
-template <template<typename> typename W, typename T, typename OS>
-struct GenSmartSequence<W, T, SmartSequence<>, OS>
-{
-    using type = OS;
-};
-*/
-
-//template <template<typename> typename W, bool B, typename T, typename S>
-//struct GenSmartSequenceHelper {
-
-//}
-
-/*
-template<typename...>
-
-template<typename T>
-void print_smart_sequence(){
-    std::cout << (int)(T::head) << ", ";
-    print_smart_sequence<typename T::tail>();
-}
-template<>
-void print_smart_sequence<TestSeq<>>() {}
-
-template<uint8_t...Ns>
-void print_smart_sequence2() {
-    print_smart_sequence<TestSeq<Ns...>>();
-}
-*/
-
 template<typename T>
 void print_smart_sequence(T) {
     std::cout << (int)T::head << ", ";
     print_smart_sequence(typename T::tail());
 }
 template<>
-void print_smart_sequence(TestSeq<>) { }
+void print_smart_sequence(Sequence::Make<>) { }
 
 
 
@@ -618,34 +275,11 @@ public:
 ////////////////////////////////////////////////////////////
 int main()
 {
-
-    //std::cout << typeid(SmartSequence<>).name() << std::endl;
-
     auto long_tuple = std::make_tuple(TA(0),TB(1),TC(2),TA(3),TB(4),TB(5),TD(6),TB(7),TA(8));
 
-    //print_sequence(SequenceGen::TupleCondition<is_TB, decltype(long_tuple)>());
-
-    //print_sequence(SequenceGen::Strip<is_TB, decltype(long_tuple), >>());
-
-    //print_smart_sequence<SmartSequence<0, 4, 2, 5, 7, 2>>();
-
-    //print_smart_sequence(TestSeqHelper<is_TB, decltype(long_tuple), TestSeq<0, 2, 4, 5, 6>>::type());
-
-    //print_smart_sequence<3, 4, 5, 6, 2, 5>();
-
-    //print_smart_sequence(TestSeqCpy<TestSeq<0, 4, 2, 5, 7, 2>>::type());
-
-    //std::cout << typeid(SequenceGen::FromRangeHelper<5>::type).name() << std::endl;
-
-
-    //std::cout << name_tbl[test_struct<4, 5, 2, 5>::value] << std::endl;
-    //std::cout << name_tbl[test_struct<Sequence<3, 4, 2, 5>>::value] << std::endl;
-
-    std::cout << std::endl;
-
-    using type1 = TestSeq<0, 2, 4, 5, 6>;
-    using type2 = TestSeqCpy<is_TB, decltype(long_tuple), type1>::type;
-    using type3 = MakeSeq<12>::type;
+    using type1 = Sequence::Make<0, 2, 4, 5, 6>;
+    using type2 = Sequence::Remove<is_TB, decltype(long_tuple), type1>;
+    using type3 = Sequence::Range0<12>;
 
     print_smart_sequence(type1()); std::cout << std::endl;
     print_smart_sequence(type2()); std::cout << std::endl;
@@ -654,15 +288,7 @@ int main()
 
     TT tt = std::make_tuple(1, 4, 6, 4);
 
-    //print_sequence( SequenceGen::FromTupleCondition<DoThing::Print, TT>() );   std::cout << std::endl;
-
-    //print_sequence( Sequence<0,1,2,3>() );   std::cout << std::endl;
-
-    // Huzzah!!! this is ok!
-
-    //DoThing::loop<DoThing::Print>( tt, SequenceGen::FromTupleRange<decltype(tt)>() );
-
-    CpInterface::loop<CpInterface::Print>(tt);
+    //CpInterface::loop<CpInterface::Print>(tt);
 
     Any test_any[4] = {
         std::get<0>(tt),
