@@ -6,17 +6,51 @@
 #include <algorithm>
 #include <initializer_list>
 
-#include <Entity.hpp>
 
+template<typename T>
+class Ref {
+public:
+    //template<typename U>
+    //Ref(U* ptr) : ptr_( reinterpret_cast<U*>(ptr) ) { }
 
+    Ref(T* ptr = nullptr) : ptr_(ptr) { }
 
+    T& operator *() {
+        ASSERT( !isNull() );
+        return *ptr_;
+    }
 
+    T* operator -> () {
+        ASSERT( !isNull() );
+        return ptr_;
+    }
 
+    const T& operator *() const {
+        ASSERT( !isNull() );
+        return *ptr_;
+    }
 
+    const T* operator -> () const {
+        ASSERT( !isNull() );
+        return ptr_;
+    }
 
-struct EntityHash {
-    uint16_t signature;
-    uint16_t index;
+    bool isNull() const {
+        return ptr_ == nullptr;
+    }
+
+    // overloaded prefix ++ operator
+   // Define prefix decrement operator.
+    Ref& operator++() {
+       ++ptr_;
+       return *this;
+    }
+
+    uint8_t* bytePtr() { return reinterpret_cast<uint8_t*>(ptr_); }
+
+private:
+    T* ptr_; // pointer
+
 };
 
 

@@ -1,53 +1,15 @@
 #ifndef ENTITY_HPP
 #define ENTITY_HPP
 
-#include <vector>
-#include <map>
-#include <algorithm>
-#include <initializer_list>
 
+#include <Container.hpp>
 
-#include <typeinfo>
 
 #include <Error.hpp>
 
 
-/*
-    Signature
-    Entity
-    Hash
-    Ref
 
-    CpInterface
-        Concrete
-        Any
-
-        CpStatic loop, make any, interface
-
-    State
-        ProxyContainer
-
-        EntityManager
-        HashManager
-
-    VectorMap
-    EntityMap
-
-
-    uint16_t head;
-    uint16_t tail;
-    std::vector<GenerationInfo> ginfo;
-    std::vector<Hash> hashes;
-
-    hash free_map
-
-    needs activeData
-    needs entityData
-*/
-
-
-
-struct Sequence {
+struct TSequence {
 private:
     template<uint8_t... Ns>
     struct MakeHelper { };
@@ -119,6 +81,7 @@ public:
     template<typename S, uint8_t V>
     using PushBack = typename AppendBack<V, S>::type;
 
+
 };
 
 
@@ -126,17 +89,12 @@ public:
 class Signature {
 public:
 
-    template<uint8_t... Args>
-    static Signature make(const uint8_t* mapper) {
-        Signature signature;
-        setBits<0, Args...>(mapper, signature);
-        return signature;
-    }
+    template<typename S>
+    constexpr Signature(S s) : bits( setBits<S>::invoke() ) { }
 
-    Signature() {
-        bits = 0x00000000;
-    }
+    constexpr Signature() : bits(0x00000000) { }
 
+    /*
     Signature(const uint8_t* mapper, std::initializer_list<uint8_t> list) {
         bits = 0x00000000;
         const uint8_t* src = list.begin();
@@ -146,6 +104,7 @@ public:
             ++src;
         }
     }
+    */
 
     bool operator[](uint8_t i) const {
         return bits & ( 0x00000001 << i );
@@ -160,17 +119,17 @@ public:
     }
 
 private:
-    template<uint16_t INDEX, uint8_t C>
-    static void setBits(const uint8_t* mapper, Signature& signature) {
-        signature.bits |= 0x00000001 << mapper[INDEX];
-    }
+    template<typename S, bool DUMMY = false>
+    struct setBits {
+        constexpr static uint32_t invoke() {
+            return (0x00000001 << S::head) | setBits<typename S::tail>::invoke();
+        }
+    };
 
-    template<uint16_t INDEX, uint8_t C1, uint8_t C2, uint8_t ... Args>
-    static void setBits(const uint8_t* mapper, Signature& signature) {
-        const uint8_t* value = mapper[INDEX];
-        signature.bits |= 0x00000001 << mapper[INDEX];
-        setBits<INDEX + 1, C2, Args...>(signature);
-    }
+    template<bool DUMMY>
+    struct setBits<TSequence::Make<>, DUMMY> {
+        constexpr static uint32_t invoke() { return 0x00000000; }
+    };
 
     uint32_t bits;
 
@@ -202,6 +161,9 @@ public:
 
 
 private:
+    template<typename... Ts>
+    friend class State;
+
     struct SignatureIndex {
         uint16_t signature;
         uint16_t index;
@@ -217,6 +179,7 @@ private:
         SignatureIndex si;
         Raw raw;
     } data;
+
 };
 
 
@@ -257,7 +220,8 @@ public:
     }
 
 private:
-    friend class EntityManager;
+    template<typename... Ts>
+    friend class State;
 
     struct Tracked {
         uint32_t index : 16;        // index of entity
@@ -289,104 +253,14 @@ private:
 };
 
 
-template<typename T>
-class Ref {
-public:
-    //template<typename U>
-    //Ref(U* ptr) : ptr_( reinterpret_cast<U*>(ptr) ) { }
-
-    Ref(T* ptr = nullptr) : ptr_(ptr) { }
-
-    T& operator *() {
-        ASSERT( !isNull() );
-        return *ptr_;
-    }
-
-    T* operator -> () {
-        ASSERT( !isNull() );
-        return ptr_;
-    }
-
-    const T& operator *() const {
-        ASSERT( !isNull() );
-        return *ptr_;
-    }
-
-    const T* operator -> () const {
-        ASSERT( !isNull() );
-        return ptr_;
-    }
-
-    bool isNull() const {
-        return ptr_ == nullptr;
-    }
-
-    // overloaded prefix ++ operator
-   // Define prefix decrement operator.
-    Ref& operator++() {
-       ++ptr_;
-       return *this;
-    }
-
-    uint8_t* bytePtr() { return reinterpret_cast<uint8_t*>(ptr_); }
-
-private:
-    T* ptr_; // pointer
-
-};
-
-
-
-
-/*
-
 class CpInterface {
 public:
-    using index_type = uint32_t;
+    void move(uint32_t oldHash, uint32_t newHash) { }
 
-    template <class T, class Tuple>
-    struct TupleTypeIndex;
-
-    template <class T, class... Types>
-    struct TupleTypeIndex<T, std::tuple<T, Types...>> {
-        static const std::size_t value = 0;
-    };
-
-    template <class T, class U, class... Types>
-    struct TupleTypeIndex<T, std::tuple<U, Types...>> {
-        static const std::size_t value = 1 + TupleTypeIndex<T, std::tuple<Types...>>::value;
-    };
-
-
+private:
 
 
 };
-*/
-
-
-
-/*
-    Signature
-    Entity
-    Hash
-    Ref
-
-    CpInterface
-        Concrete
-        Any
-
-        CpStatic loop, make any, interface
-
-    State
-        ProxyContainer
-
-        EntityManager
-        HashManager
-
-    VectorMap
-    EntityMap
-
-*/
 
 
 
@@ -394,22 +268,22 @@ public:
 template<typename... Ts>
 class State {
 public:
+    constexpr static uint16_t EndOfList = 0xffff;
+
+    State() : head(EndOfList), tail(EndOfList) { }
+
     static bool getBit(uint8_t bits, uint8_t index)     { return bits & (0x01 << index); }
-    static bool setBit(uint8_t& bits, uint8_t index)    { bits |=  (0x01 << index); }
-    static bool unsetBit(uint8_t& bits, uint8_t index)  { bits &= ~(0x01 << index); }
+    static void setBit(uint8_t& bits, uint8_t index)    { bits |=  (0x01 << index); }
+    static void unsetBit(uint8_t& bits, uint8_t index)  { bits &= ~(0x01 << index); }
 
-    using pack_type = std::tuple<Ts...>;
-    using pack_value_type = std::tuple<typename Ts::value_type...>;
-    using pack_ref_type = std::tuple<Ref<typename Ts::value_type>...>;
+    using pack_type = std::tuple<Ts..., VectorMap<uint8_t>, VectorMap<uint16_t>>;
+    using pack_value_type = std::tuple<typename Ts::value_type..., uint8_t, uint16_t>;
+    //using pack_ref_type = std::tuple<Ref<typename Ts::value_type>...>;
 
-    //constexpr tuple_index_list = std::tuple<  >;
-
-    //constexpr static CpInterface::index_type entityIndex = std::tuple_size<pack_type>::value - 1;
-    //constexpr static CpInterface::index_type activeIndex = std::tuple_size<pack_type>::value - 2;
+    constexpr static uint8_t entityIndex = std::tuple_size<pack_type>::value - 1;
+    constexpr static uint8_t activeIndex = std::tuple_size<pack_type>::value - 2;
 
     pack_type pack;
-
-    constexpr static uint16_t EndOfList = 0xffff;
 
     struct GenerationInfo {
         uint16_t generation : 15;
@@ -427,9 +301,73 @@ public:
     std::vector<Hash> hashes;
     std::map<uint16_t, FreeInfo> freeMap;
 
-    // const map from sig_index to component_index
-    // const map from component_index to sig_index
-    // const uint32_t only_static_bits;
+
+    Entity Create() {
+        Entity::Tracked entity;
+        if (head == EndOfList) {
+            entity.index = ginfo.size();
+            GenerationInfo info;
+            info.generation = 1;
+            info.unsafe = 0;
+            ginfo.push_back(info);
+            hashes.push_back( Hash() );
+        } else {
+            entity.index = head;
+            head = hashes[entity.index].index;
+            hashes[entity.index] = Hash();
+            if (head == EndOfList)
+                tail = EndOfList;
+        }
+        entity.untracked = 0;
+        entity.generation = ginfo[entity.index].generation;
+        return Entity(entity);
+    }
+
+    /*
+    void ChangeSignature(Entity entity, SignatureId signature_id) {
+        // Entity is untracked or invalid
+        ASSERT(entity.Tracked().untracked == 0 && Valid(entity) == true);
+        VectorMapHash old_hash = entityManager.GetHash(entity.Tracked().index); // gets the current hash of the entity
+        VectorMapHash new_hash;
+
+        if (old_hash.signature == signature_id) return; // don't switch it with itself!
+
+        // If the signature isn't null, and entityData doesn't contain the signature yet,
+        // it needs to be initialized.
+        if (signature_id != SignatureManager::Null() && entityData.HasSignature(signature_id) == false) {
+            const Signature& reg_sig = signatureManager.Get(signature_id);
+            entityData.Register(signature_id, 0);
+            for (const auto& cid : reg_sig) {
+                pack.Any(cid).Register(signature_id, 0);
+            }
+        }
+
+        // All components that appear in both the old and new signatures needs to be moved.
+        const Signature sig = signatureManager.Get(old_hash.signature) + signatureManager.Get(signature_id);
+        entityData.Move(old_hash, signature_id);
+        for (const auto& cid : sig) {
+            pack.Any(cid).Move(old_hash, signature_id);
+        }
+
+        // if the new signature isn't null, the entity data pointing back to the
+        // fixed entity value needs to be updated.
+        new_hash.signature = signature_id;
+        //new_hash.index = 0;
+        if (new_hash.signature != SignatureManager::Null() ) {
+            new_hash.index = entityData.Size(signature_id) - 1;
+            *entityData.Get(new_hash) = entity.Tracked().index;
+        }
+
+        // So potentially two different entity components will move,
+        // the one being changed, and the one that is displacing the
+        // current changed entity by swapping their positions.
+        Ref<uint16_t> swapped_entity = entityData.Get(old_hash);
+        if (swapped_entity.IsNull() == false) {
+            entityManager.GetHash(*swapped_entity) = old_hash;
+        }
+        entityManager.GetHash(entity.Tracked().index) = new_hash;
+    }
+    */
 
     /*
     *Extend

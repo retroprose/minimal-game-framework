@@ -38,45 +38,6 @@ struct Cp {
 
 };
 
-/*
-
-    struct Cp {
-        enum {
-            Body = 0,
-            Color,
-            Controller,
-            HatColor
-        };
-    };
-
-    State<
-        2,
-        VectorMap<Body>,
-        VectorMap<Color>,
-        EntityMap<Controller>,
-        EntityMap<Color>
-    > state;
-
-
-    log2(n & -n) + 1
-
-    0000
-
-    int -> bit    (0x0001 << int)
-
-    0001    1   0   0000
-
-    0010    3   1   0001
-
-    0100    5   2   0010
-
-    1000    7   3   0011
-
-
-*/
-
-
-
 
 enum CpType : uint8_t {
     Body = 0,
@@ -94,175 +55,21 @@ using MyState = State<
 >;
 
 
-
-
-
-/*
-
-
-
-
-*/
-
-
-struct TA { TA(int x) : x_(x) {} int x_; void print() { std::cout << "TA: " << x_ << std::endl; } };
-struct TB { TB(int x) : x_(x) {} int x_; void eat() { std::cout << "TB: EATING" << std::endl; } };
-struct TC { TC(int x) : x_(x) {} int x_; void print() { std::cout << "TC: " << x_ << std::endl; } };
-struct TD { TD(int x) : x_(x) {} int x_; void eat() { std::cout << "TD: EATING" << std::endl; } };
-using TT = std::tuple<TA, TB, TC, TD>;
-
-template<typename T> struct is_in_;
-
-template<typename T> struct is_in_ { constexpr static const bool value = false; };
-template<> struct is_in_<TA> { constexpr static const bool value = true; };
-template<> struct is_in_<TB> { constexpr static const bool value = false; };
-template<> struct is_in_<TC> { constexpr static const bool value = true; };
-
-template<typename T>
-using is_in = is_in_<T>;
-
-template<typename T> struct is_out;
-
-template<typename T> struct is_out { constexpr static const bool value = true; };
-template<> struct is_out<TA> { constexpr static const bool value = false; };
-template<> struct is_out<TB> { constexpr static const bool value = true; };
-template<> struct is_out<TC> { constexpr static const bool value = false; };
-
-
-template<typename T> struct is_TB;
-template<typename T> struct is_TB { constexpr static const bool value = false; };
-template<> struct is_TB<TB> { constexpr static const bool value = true; };
-
-
-
-
-
-
-class CpInterface {
-private:
-    template<bool C, typename T = void>
-    struct enable_if {
-      typedef T type;
+struct EnCap {
+    struct expand_type {
+        template <typename... T>
+        expand_type(T&&...) {}
     };
 
-    template<typename T>
-    struct enable_if<false, T> { };
+    template<typename T, typename Ts>
+    struct Function;
 
-public:
-    template<template<typename> typename F, typename T>
-    static void loop(T& t, Sequence::Make<>) { }
-    template<template<typename> typename F, typename T, uint8_t C, uint8_t...Args>
-    static void loop(T& t, Sequence::Make<C, Args...>) {
-        F<typename std::tuple_element<C, T>::type>::invoke(std::get<C>(t));
-        loop<F>(t, Sequence::Make<Args...>());
-    }
-
-    template<template<typename> typename F, typename T>
-    static void loop(T& t) {
-        loop<F>(t, Sequence::Remove<F, T>());
-    }
-
-
-    //
-    //
-    //  Print function!
-    // can specialize this if you want!
-    //
-    //
-    //
-    template<typename T>
-    class Print {
-    private:
-        template <typename U, U> struct type_check;
-        template <typename _1> static uint16_t &chk(type_check<void (_1::*)(), &_1::print> *);
-        template <typename   > static  uint8_t &chk(...);
-
-    public:
-        static bool const value = sizeof(chk<T>(0)) == sizeof(uint16_t);
-
-        //template<typename _1> static typename enable_if<Print<_1>::value, RETURN_TYPE (void)>::type invoke(_1& t) {
-        template<typename _1> static typename enable_if<Print<_1>::value   >::type invoke(_1& t) {
-            t.print();
-        }
-
-        template<typename _1> static typename enable_if<!Print<_1>::value   >::type invoke(_1& t) {
-            std::cout << "DEFAULT!" << std::endl;
+    template<typename T, uint8_t... Ns>
+    struct Function<T, TSequence::Make<Ns...>> {
+        static void invoke(T& t) {
+            expand_type{ 0, (( std::cout << std::get<Ns>(t) << ", " ), void(), 0)... };
         }
     };
-
-    template<typename T>
-    static void print(T& t) {
-        Print<T>::invoke(t);
-    }
-
-};
-
-
-
-
-class Any {
-public:
-    // this guy is going into a table of function pointers
-    template<typename T>
-    static Any make(T& t) { return Any(t); }
-
-    struct Abstract {
-        virtual void print() = 0;
-    };
-
-    Any() {
-        ASSERT(false);
-    }
-
-    template<typename T>
-    Any(T& t) {
-        ASSERT(sizeof(Default<T>) <= MaxBuffer);
-        Abstract* d = new (buffer_) Default<T>(t);
-        ASSERT(d - reinterpret_cast<Abstract*>(buffer_) == 0);
-    }
-
-    Abstract* operator->() {
-        return reinterpret_cast<Abstract*>(buffer_);
-    }
-
-private:
-    template<typename T>
-    struct Default : public Abstract {
-        Default<T>(T& t) : t_(t) { }
-        T& t_;
-        virtual void print() { CpInterface::Print<T>::invoke(t_); }
-    };
-
-    constexpr static const size_t MaxBuffer = 8;
-    uint8_t buffer_[MaxBuffer];
-
-};
-
-
-
-
-
-
-template<typename T>
-void print_smart_sequence(T) {
-    std::cout << (int)T::head << ", ";
-    print_smart_sequence(typename T::tail());
-}
-template<>
-void print_smart_sequence(Sequence::Make<>) { }
-
-
-
-
-
-
-template<>
-class CpInterface::Print<TD> {
-public:
-    static bool const value = true;
-    static void invoke(TD& t) {
-        std::cout << "TD: DO SOMETHING MAGICAL! " << t.x_ << std::endl;
-    }
 };
 
 
@@ -275,36 +82,18 @@ public:
 ////////////////////////////////////////////////////////////
 int main()
 {
-    auto long_tuple = std::make_tuple(TA(0),TB(1),TC(2),TA(3),TB(4),TB(5),TD(6),TB(7),TA(8));
 
-    using type1 = Sequence::Make<0, 2, 4, 5, 6>;
-    using type2 = Sequence::Remove<is_TB, decltype(long_tuple), type1>;
-    using type3 = Sequence::Range0<12>;
-
-    print_smart_sequence(type1()); std::cout << std::endl;
-    print_smart_sequence(type2()); std::cout << std::endl;
-    print_smart_sequence(type3()); std::cout << std::endl;
+    auto test_tuple = std::make_tuple(3, 4.3, 'f');
 
 
-    TT tt = std::make_tuple(1, 4, 6, 4);
-
-    //CpInterface::loop<CpInterface::Print>(tt);
-
-    Any test_any[4] = {
-        std::get<0>(tt),
-        std::get<1>(tt),
-        std::get<2>(tt),
-        std::get<3>(tt)
-    };
-
-    for (int i = 0; i < 4; ++i) {
-        test_any[i]->print();
-    }
 
 
-    MyState state;
+    //EnCap::Function<decltype(test_tuple), TSequence::Make<1, 0, 2>>::invoke(test_tuple);  std::cout << std::endl;
 
+    //test_function<decltype(test_tuple), TSequence::Make<1, 0, 2>>(test_tuple);  std::cout << std::endl;
 
+    //EnCap::Function<TSequence::Make<3, 4, 6, 1, 7, 8, 5>>::invoke();  std::cout << std::endl;
+    //Function<3, 4, 6, 1, 7, 8, 5>::invoke();  std::cout << std::endl;
 
     // Define some constants
     const int gameWidth = 800;
@@ -348,7 +137,7 @@ int main()
     message.setString("Use WASD to move, mouse to move cursor.\nLeft and right mouse button adds and\nRemoves player's hat.");
 
 
-    //MyState state;
+    MyState state;
 
     //state.do_thing();
 
