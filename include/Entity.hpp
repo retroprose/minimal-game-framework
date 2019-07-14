@@ -5,40 +5,54 @@
 #include <Container.hpp>
 
 
-#include <Error.hpp>
+
+struct cpp17_fold_expand_type {
+    template <typename... T>
+    cpp17_fold_expand_type(T&&...) { }
+};
+#define CPP17_FOLD(x)   cpp17_fold_expand_type{ 0, ((x), void(), 0)... }
 
 
 
 struct TSequence {
 private:
-    template<uint8_t... Ns>
+    constexpr static uint32_t Null = 0xffffffff;
+
+    template<uint32_t... Ns>
     struct MakeHelper { };
 
-    template<uint8_t H, uint8_t... Ns>
+    template<uint32_t H, uint32_t... Ns>
     struct MakeHelper<H, Ns...> {
-        static const uint8_t head = H;
+        static const uint32_t head = H;
         using tail = MakeHelper<Ns...>;
+        constexpr static uint32_t value[sizeof...(Ns) + 2] = { H, Ns..., Null };
+        static uint32_t find(uint32_t key) {
+            uint32_t index = Null;
+            index = (H == key) ? H : index;
+            CPP17_FOLD( index = (Ns == key) ? Ns : index );
+            ASSERT(index != Null);
+        }
     };
 
-    template <uint8_t APPEND, typename TAIL, uint8_t...Ns>
+    template <uint32_t APPEND, typename TAIL, uint32_t...Ns>
     struct AppendBack {
         using type = typename AppendBack<APPEND, typename TAIL::tail, Ns..., TAIL::head>::type;
     };
 
-    template <uint8_t APPEND, uint8_t...Ns>
+    template <uint32_t APPEND, uint32_t...Ns>
     struct AppendBack<APPEND, MakeHelper<>, Ns...> {
         using type = MakeHelper<Ns..., APPEND>;
     };
 
-    template<bool ADD, uint8_t HEAD, typename S>
+    template<bool ADD, uint32_t HEAD, typename S>
     struct IfCond;
 
-    template<uint8_t HEAD, typename S>
+    template<uint32_t HEAD, typename S>
     struct IfCond<true, HEAD, S> {
         using type = typename AppendBack<HEAD, S>::type;
     };
 
-    template<uint8_t HEAD, typename S>
+    template<uint32_t HEAD, typename S>
     struct IfCond<false, HEAD, S> {
         using type = S;
     };
@@ -53,87 +67,40 @@ private:
         using type = OS;
     };
 
-    template<uint8_t N, uint8_t I = 0, typename OS = MakeHelper<>>
+    template<uint32_t N, uint32_t I = 0, typename OS = MakeHelper<>>
     struct RangeHelper {
         using type = typename RangeHelper<N, I + 1, typename AppendBack<I, OS>::type>::type;
     };
 
-    template <uint8_t N, typename OS>
+    template <uint32_t N, typename OS>
     struct RangeHelper<N, N, OS> {
         using type = OS;
     };
 
 public:
-    template<uint8_t... Ns>
+    template<uint32_t... Ns>
     using Make = MakeHelper<Ns...>;
 
 
-    template<uint8_t N>
+    template<uint32_t N>
     using Range0 = typename RangeHelper<N>::type;
 
-    template<uint8_t I, uint8_t N>
+    template<uint32_t I, uint32_t N>
     using Range = typename RangeHelper<N, I>::type;
 
 
-    template <template<typename> typename W, typename T, typename IS = typename Range0<std::tuple_size<T>::value>::type, typename OS = MakeHelper<>>
+    template <template<typename> typename W, typename T, typename IS = Range0<std::tuple_size<T>::value>, typename OS = Make<>>
     using Remove = typename RemoveIf<W, T, IS>::type;
 
-    template<typename S, uint8_t V>
+
+    template<typename S, uint32_t V>
     using PushBack = typename AppendBack<V, S>::type;
 
 
 };
 
-
-
-class Signature {
-public:
-
-    template<typename S>
-    constexpr Signature(S s) : bits( setBits<S>::invoke() ) { }
-
-    constexpr Signature() : bits(0x00000000) { }
-
-    /*
-    Signature(const uint8_t* mapper, std::initializer_list<uint8_t> list) {
-        bits = 0x00000000;
-        const uint8_t* src = list.begin();
-        for (;;) {
-            if (src == list.end()) break;
-            bits |= 0x00000001 << mapper[*src];
-            ++src;
-        }
-    }
-    */
-
-    bool operator[](uint8_t i) const {
-        return bits & ( 0x00000001 << i );
-    }
-
-    uint16_t staticMask() const {
-        return bits & 0x0000ffff;
-    }
-
-    uint16_t dynamicMask() const {
-        return (bits & 0xffff0000) >> 16;
-    }
-
-private:
-    template<typename S, bool DUMMY = false>
-    struct setBits {
-        constexpr static uint32_t invoke() {
-            return (0x00000001 << S::head) | setBits<typename S::tail>::invoke();
-        }
-    };
-
-    template<bool DUMMY>
-    struct setBits<TSequence::Make<>, DUMMY> {
-        constexpr static uint32_t invoke() { return 0x00000000; }
-    };
-
-    uint32_t bits;
-
-};
+template<uint32_t H, uint32_t... Ns>
+constexpr uint32_t TSequence::MakeHelper<H, Ns...>::value[];
 
 
 struct Hash {
@@ -165,8 +132,8 @@ private:
     friend class State;
 
     struct SignatureIndex {
-        uint16_t signature;
         uint16_t index;
+        uint16_t signature;
     };
 
     struct Raw {
@@ -197,7 +164,7 @@ public:
 
     uint16_t index() const {
         ASSERT(data.tracked.untracked == 0);
-        return data.tracked.untracked;
+        return data.tracked.index;
     }
 
     uint16_t generation() const {
@@ -253,121 +220,77 @@ private:
 };
 
 
-class CpInterface {
-public:
-    void move(uint32_t oldHash, uint32_t newHash) { }
-
-private:
-
-
-};
-
-
-
 
 template<typename... Ts>
 class State {
 public:
+    template<typename T> struct needs_move                  { static const bool value = false; };
+    template<typename T> struct needs_move<VectorMap<T>>    { static const bool value = true;  };
+
     constexpr static uint16_t EndOfList = 0xffff;
 
-    State() : head(EndOfList), tail(EndOfList) { }
-
-    static bool getBit(uint8_t bits, uint8_t index)     { return bits & (0x01 << index); }
-    static void setBit(uint8_t& bits, uint8_t index)    { bits |=  (0x01 << index); }
-    static void unsetBit(uint8_t& bits, uint8_t index)  { bits &= ~(0x01 << index); }
-
-    using pack_type = std::tuple<Ts..., VectorMap<uint8_t>, VectorMap<uint16_t>>;
-    using pack_value_type = std::tuple<typename Ts::value_type..., uint8_t, uint16_t>;
-    //using pack_ref_type = std::tuple<Ref<typename Ts::value_type>...>;
-
-    constexpr static uint8_t entityIndex = std::tuple_size<pack_type>::value - 1;
-    constexpr static uint8_t activeIndex = std::tuple_size<pack_type>::value - 2;
-
-    pack_type pack;
-
     struct GenerationInfo {
+        GenerationInfo() : generation(0), unsafe(0) { }
+        GenerationInfo(uint16_t g) : generation(g), unsafe(0) { }
         uint16_t generation : 15;
         uint16_t unsafe : 1;
     };
 
     struct FreeInfo {
+        FreeInfo() : head(EndOfList), size(1) { }
         uint16_t head;
         uint16_t size;
     };
 
-    uint16_t head;
-    uint16_t tail;
-    std::vector<GenerationInfo> ginfo;
-    std::vector<Hash> hashes;
-    std::map<uint16_t, FreeInfo> freeMap;
+    struct ActiveComp {
+        ActiveComp() : bits(0x00) { }
+        bool getBit(uint8_t index) const    { return bits & (0x01 << index); }
+        void setBit(uint8_t index)          { bits |=  (0x01 << index); }
+        void unsetBit(uint8_t index)        { bits &= ~(0x01 << index); }
+        void clear()                        { bits = 0x00; }
+        uint8_t bits;
+    };
+
+    struct FreeComp {
+        FreeComp() : head(EndOfList), tail(EndOfList) { }
+        uint16_t head;
+        uint16_t tail;
+    };
+
+    using data_type = std::tuple<
+        Ts...,                  // user defined components
+        Vector<Hash>,           // hashes -6
+        Vector<GenerationInfo>, // generation id -5
+        VectorMap<ActiveComp>,  // active bit/dynamic comps -4
+        VectorMap<uint16_t>,    // entity -3
+        HashMap<FreeInfo>,      // free hashes -2
+        Single<FreeComp>        // free entities -1
+    >;
+
+    //using value_type = std::tuple<typename Ts::value_type...>;
+    //using ref_type = std::tuple<Ref<typename Ts::value_type>...>;
+
+    constexpr static size_t pack_size = std::tuple_size<data_type>::value;
+
+    template<uint32_t N>
+    using container_type = typename std::tuple_element<N, data_type>::type;
+
+    template<uint32_t N>
+    using component_type = typename std::tuple_element<N, data_type>::type::value_type;
+
+    using vector_map_sequence = TSequence::Remove<needs_move, data_type, TSequence::Range0<pack_size - 6>>;
 
 
-    Entity Create() {
-        Entity::Tracked entity;
-        if (head == EndOfList) {
-            entity.index = ginfo.size();
-            GenerationInfo info;
-            info.generation = 1;
-            info.unsafe = 0;
-            ginfo.push_back(info);
-            hashes.push_back( Hash() );
-        } else {
-            entity.index = head;
-            head = hashes[entity.index].index;
-            hashes[entity.index] = Hash();
-            if (head == EndOfList)
-                tail = EndOfList;
-        }
-        entity.untracked = 0;
-        entity.generation = ginfo[entity.index].generation;
-        return Entity(entity);
-    }
+    constexpr static uint32_t hashComp = pack_size - 6;
+    constexpr static uint32_t generationComp = pack_size - 5;
+    constexpr static uint32_t activeComp = pack_size - 4;
+    constexpr static uint32_t entityComp = pack_size - 3;
+    constexpr static uint32_t freeHashComp = pack_size - 2;
+    constexpr static uint32_t freeEntityComp = pack_size - 1;
 
-    /*
-    void ChangeSignature(Entity entity, SignatureId signature_id) {
-        // Entity is untracked or invalid
-        ASSERT(entity.Tracked().untracked == 0 && Valid(entity) == true);
-        VectorMapHash old_hash = entityManager.GetHash(entity.Tracked().index); // gets the current hash of the entity
-        VectorMapHash new_hash;
 
-        if (old_hash.signature == signature_id) return; // don't switch it with itself!
+    data_type data;
 
-        // If the signature isn't null, and entityData doesn't contain the signature yet,
-        // it needs to be initialized.
-        if (signature_id != SignatureManager::Null() && entityData.HasSignature(signature_id) == false) {
-            const Signature& reg_sig = signatureManager.Get(signature_id);
-            entityData.Register(signature_id, 0);
-            for (const auto& cid : reg_sig) {
-                pack.Any(cid).Register(signature_id, 0);
-            }
-        }
-
-        // All components that appear in both the old and new signatures needs to be moved.
-        const Signature sig = signatureManager.Get(old_hash.signature) + signatureManager.Get(signature_id);
-        entityData.Move(old_hash, signature_id);
-        for (const auto& cid : sig) {
-            pack.Any(cid).Move(old_hash, signature_id);
-        }
-
-        // if the new signature isn't null, the entity data pointing back to the
-        // fixed entity value needs to be updated.
-        new_hash.signature = signature_id;
-        //new_hash.index = 0;
-        if (new_hash.signature != SignatureManager::Null() ) {
-            new_hash.index = entityData.Size(signature_id) - 1;
-            *entityData.Get(new_hash) = entity.Tracked().index;
-        }
-
-        // So potentially two different entity components will move,
-        // the one being changed, and the one that is displacing the
-        // current changed entity by swapping their positions.
-        Ref<uint16_t> swapped_entity = entityData.Get(old_hash);
-        if (swapped_entity.IsNull() == false) {
-            entityManager.GetHash(*swapped_entity) = old_hash;
-        }
-        entityManager.GetHash(entity.Tracked().index) = new_hash;
-    }
-    */
 
     /*
     *Extend
@@ -382,38 +305,158 @@ public:
     ChangeSignature entity, signature   // needs comps
 
 
-
-
     *EntityFromHash
     *HashFromEntity
 
     ForEach
     */
 
-    /*
-    static void make_mapper() {
+    Entity create() {
+        auto& freeData = std::get<State::freeEntityComp>(data).get();
+        auto& generationData = std::get<State::generationComp>(data);
+        auto& hashData = std::get<State::hashComp>(data);
+        Entity::Tracked entity;
+        if (freeData.head == EndOfList) {
+            entity.index = generationData.size();
+            generationData.insert(entity.index);
+            hashData.insert(entity.index);
+            generationData[entity.index].set( GenerationInfo(1) );
+            hashData[entity.index].set( Hash() );
+        } else {
+            entity.index = freeData.head;
+            freeData.head = hashData.get(entity.index)->index();
+            hashData[entity.index].set( Hash() );
+            if (freeData.head == EndOfList)
+                freeData.tail = EndOfList;
+        }
+        entity.untracked = 0;
+        entity.generation = generationData.get(entity.index)->generation;
+        return Entity(entity);
+    }
 
-        uint32_t dynamicIndex = 0, staticIndex = 0;
 
-        map_to_component
-        map_to_signature
+    template<uint32_t... Ns>
+    void changeSignature(Entity entity) {
+        auto& freeData = std::get<State::freeHashComp>(data);
+        auto& hashData = std::get<State::hashComp>(data);
+        auto& activeData = std::get<State::activeComp>(data);
+        auto& entityData = std::get<State::entityComp>(data);
 
-        for each INDEX in tuple {
-            map_to_signature[INDEX] = dynamicIndex;
-            map_to_component[dynamicIndex] = INDEX;
-            ++dynamicIndex;
+        Hash::SignatureIndex nh;
+
+        nh.signature = 0x0000;
+
+        // generate signature hash
+        CPP17_FOLD( nh.signature |= (0x0001 << vector_map_sequence::find(Ns)) );
+
+        Hash oldHash = hashData[entity.index()].get();
+        auto newInfo = freeData[nh.signature];
+        if ( newInfo.isNull() ) {
+            nh.index = 0;
+            if (nh.signature != 0) {
+                freeData.insert(nh.signature);
+                freeData[nh.signature].set( FreeInfo() );
+                auto asdf = freeData[nh.signature];
+            }
+        } else {
+            if (newInfo->head == EndOfList) {
+                nh.index = newInfo->size;
+                ++(newInfo->size);
+            } else {
+                nh.index = newInfo->head;
+                newInfo->head = entityData[Hash(nh).raw()].get();
+            }
+        }
+        Hash newHash = Hash(nh);
+
+        auto oldInfo = freeData[oldHash.signature()];
+        if ( !oldInfo.isNull() ) {
+            activeData[oldHash.raw()]->unsetBit(7);
+            entityData[oldHash.raw()].set(oldInfo->head);
+            oldInfo->head = oldHash.index();
         }
 
+        entityData.move( oldHash.raw(), newHash.raw() );
+        activeData.move( oldHash.raw(), newHash.raw() );
 
+        // move all components needed to move
+        CPP17_FOLD( std::get<Ns>(data).move(oldHash.raw(), newHash.raw()) );
+
+        if (newHash.signature() != 0) {
+            activeData[newHash.raw()]->unsetBit(7);
+            entityData[newHash.raw()].set( entity.index() );
+        }
+
+        hashData[entity.index()].set(newHash);
     }
-*/
+
+    template<uint32_t... Ns, typename F>
+    void ForEach(F func) {
+        auto& generationData = std::get<State::generationComp>(data);
+        auto& entityData = std::get<State::entityComp>(data);
+        Entity::Tracked entity;
+        entity.untracked = 0;
+        uint16_t sigHash = 0x0000;
+        // generate signature hash
+        CPP17_FOLD( sigHash |= (0x0001 << vector_map_sequence::find(Ns)) );
+        for (auto& kv : entityData) {
+            for (auto& index : kv.second) {
+                entity.generation = generationData[index]->generation;
+                entity.index = index;
+                func( Entity(entity) );
+            }
+        }
+    }
 
 
 private:
+    template<typename T, uint32_t COMP>
+    class IComponent;
 
+    template<typename T, uint32_t COMP>
+    class IComponent<VectorMap<T>, COMP> {
+    private:
+        State& state;
+
+    public:
+        IComponent(State* s) : state(*s) { }
+
+        Ref<T> get(Entity entity) {
+            auto& componentData = std::get<COMP>(state.data);
+            auto& hashData = std::get<State::hashComp>(state.data);
+            return componentData[hashData[entity.index()]->raw()];
+        }
+
+        //Ref<T> get(Hash hash) {
+        //    return std::get<COMP>(data).get(hash);
+        //}
+
+    };
+    template<typename T, uint32_t COMP>
+    friend class IComponent;
+
+public:
+
+
+    template<uint32_t N>
+    auto get(Entity entity) -> decltype(IComponent<container_type<N>, N>(this).get(entity)) {
+        return IComponent<container_type<N>, N>(this).get(entity);
+    }
+/*
+    template<uint32_t N>
+    auto get(Hash hash) -> decltype(IComponent<component_type<N>, N>(this).get(hash)) {
+        return IComponent<component_type<N>, N>(this).get(hash);
+    }
+*/
+
+//    template<uint32_t N>
+//    auto get(Entity entity) -> uint32_t {
+//        return N;
+//    }
 
 
 };
+
 
 
 

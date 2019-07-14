@@ -39,19 +39,19 @@ struct Cp {
 };
 
 
-enum CpType : uint8_t {
-    Body = 0,
+enum CpType : uint32_t {
+    Controller = 0,
     Color,
-    Controller,
-    HatColor
+    HatColor,
+    Body
 };
 
 
 using MyState = State<
-    VectorMap<Cp::Body>,
+    HashMap<Cp::Controller>,
     VectorMap<Cp::Color>,
-    EntityMap<Cp::Controller>,
-    EntityMap<Cp::Color>
+    HashMap<Cp::Color>,
+    VectorMap<Cp::Body>
 >;
 
 
@@ -83,7 +83,7 @@ struct EnCap {
 int main()
 {
 
-    auto test_tuple = std::make_tuple(3, 4.3, 'f');
+    //auto test_tuple = std::make_tuple(3, 4.3, 'f');
 
 
 
@@ -139,6 +139,20 @@ int main()
 
     MyState state;
 
+    auto playerEntity = state.create();
+
+    {
+        state.changeSignature<Body, Color>(playerEntity);
+        auto body = state.get<Body>(playerEntity);
+        auto color = state.get<Color>(playerEntity);
+
+        // notice that references use -> instead of . to access members
+        body->position = Vector2(400, 300);    // set to center of screen
+        body->velocity = Vector2(0, 0);        // zero velocity
+        body->radius = playerRadius;           // radius of player
+        color.set( Cp::Color(1.0f, 1.0f, 1.0f) );      // player will be white (notice we dereference with *)
+    }
+
     //state.do_thing();
 
     //state.print_things();
@@ -169,36 +183,38 @@ int main()
     *ref.color = Color(1.0f, 1.0f, 1.0f);      // player will be white (notice we dereference with *)
 
     state.setActive(playerEntity, true);
-
-    for (int i = 0; i < 50; i++) {
+*/
+    for (int i = 0; i < 50; ++i) {
         auto e = state.create();
 
-        state.changeSignature(e, {State::Body, State::Color});
+        state.changeSignature<Body, Color>(e);
 
         // random chance of having a hat
         int r = rand()%100;
         if (r < 10) {
-            state.addSignature( e, {State::HatColor} );
+            //state.addSignature( e, {State::HatColor} );
         }
 
-        ref.body = state.body(e);
-        ref.color = state.color(e);
-        ref.hatColor = state.hatColor(e);
+        {
+            auto body = state.get<Body>(e);
+            auto color = state.get<Color>(e);
+            //auto hatColor = state.hatColor(e);
 
-        ref.body->position = Vector2(rand()%800, rand()%600);
-        ref.body->velocity = Vector2(rand()%5, rand()%5);
-        //eref.body->velocity = Vector2(0, 0);
-        ref.body->radius = playerRadius;
-        *ref.color = Color(rand()%10000/10000.0f, rand()%10000/10000.0f, rand()%10000/10000.0f);
+            body->position = Vector2(rand()%800, rand()%600);
+            body->velocity = Vector2(rand()%5, rand()%5);
+            //eref.body->velocity = Vector2(0, 0);
+            body->radius = playerRadius;
+            color.set( Cp::Color(rand()%10000/10000.0f, rand()%10000/10000.0f, rand()%10000/10000.0f) );
+        }
 
         // some will not have hats, so need to check that the reference isn't null first
-        if (ref.hatColor.isNull() == false) {
-            *ref.hatColor = Color(rand()%10000/10000.0f, rand()%10000/10000.0f, rand()%10000/10000.0f);
-        }
+        //if (ref.hatColor.isNull() == false) {
+        //    *ref.hatColor = Color(rand()%10000/10000.0f, rand()%10000/10000.0f, rand()%10000/10000.0f);
+        //}
 
-        state.setActive(e, true);
+        //state.setActive(e, true);
     }
-*/
+
 
 
     // This will be the main game loop
@@ -318,6 +334,28 @@ int main()
         // Clear the window
         window.clear(sf::Color(50, 200, 50));
 
+/*
+        for (auto& vec : state.proxy<Body, Color>()) {
+            for (auto ref : vec) {
+                std::tie(body, color) = ref;
+                circle.setFillColor(sf::Color(color->r*255, color->g*255, color->b*255));
+                circle.setPosition(body->position.x, body->position.y);
+                circle.setRadius(body->radius);
+                circle.setOrigin(body->radius / 2.0f, body->radius / 2.0f);
+                window.draw(circle);
+            }
+        }
+*/
+        // This will draw all of the entities.
+        state.ForEach<Body, Color>([&](Entity entity) {
+            auto body = state.get<Body>(entity);
+            auto color = state.get<Color>(entity);
+            circle.setFillColor(sf::Color(color->r*255, color->g*255, color->b*255));
+            circle.setPosition(body->position.x, body->position.y);
+            circle.setRadius(body->radius);
+            circle.setOrigin(body->radius / 2.0f, body->radius / 2.0f);
+            window.draw(circle);
+        });
 
 
 /*

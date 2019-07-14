@@ -4,16 +4,28 @@
 #include <vector>
 #include <map>
 #include <algorithm>
-#include <initializer_list>
 
+#include <Error.hpp>
 
 template<typename T>
 class Ref {
 public:
-    //template<typename U>
-    //Ref(U* ptr) : ptr_( reinterpret_cast<U*>(ptr) ) { }
-
     Ref(T* ptr = nullptr) : ptr_(ptr) { }
+
+    T& get() {
+        ASSERT( !isNull() );
+        return *ptr_;
+    }
+
+    const T& get() const {
+        ASSERT( !isNull() );
+        return *ptr_;
+    }
+
+    void set(const T& t) {
+        ASSERT( !isNull() );
+        *ptr_ = t;
+    }
 
     T& operator *() {
         ASSERT( !isNull() );
@@ -40,7 +52,7 @@ public:
     }
 
     // overloaded prefix ++ operator
-   // Define prefix decrement operator.
+    // Define prefix decrement operator.
     Ref& operator++() {
        ++ptr_;
        return *this;
@@ -55,10 +67,77 @@ private:
 
 
 template<typename T>
+class Single {
+private:
+    T value;
+
+public:
+    using value_type = T;
+
+    Ref<T> getRef() {
+        return Ref<T>(value);
+    }
+
+    T& get() {
+        return value;
+    }
+
+};
+
+
+template<typename T>
+class Vector {
+private:
+    using table_type = std::vector<T>;
+    table_type table;
+
+public:
+    using value_type = T;
+
+    size_t size() const {
+        return table.size();
+    }
+
+    Ref<T> operator[](uint16_t index) {
+        return Ref<T>( &(table[index]) );
+    }
+
+    Ref<T> get(uint16_t index) {
+        return Ref<T>( &(table[index]) );
+    }
+
+    typename table_type::const_iterator begin() const {
+        return table.begin();
+    }
+
+    typename table_type::const_iterator end() const {
+        return table.end();
+    }
+
+    void sort() {
+        std::sort(table.begin(), table,end());
+    }
+
+    void insert(uint16_t index) {
+        if (index + 1 > table.size()) {
+            table.resize(index + 1);
+        }
+    }
+
+    void erase(uint16_t index) {
+        std::swap(table[index], table[table.size() - 1]);
+        table.pop_back();
+    }
+
+};
+
+
+
+template<typename T>
 class VectorMap {
 private:
-    using pair_type = std::pair<uint16_t, std::vector<T>>;
-    using table_type = std::map<uint16_t, std::vector<T>>;
+    using pair_type = std::pair<uint32_t, std::vector<T>>;
+    using table_type = std::map<uint32_t, std::vector<T>>;
     table_type table;
 
 public:
@@ -87,6 +166,15 @@ public:
         if (it == table.end() || getIndex(hash) >= it->second.size())
             has = false;
         return has;
+    }
+
+    Ref<T> operator[](uint32_t hash) {
+        Ref<T> ref;
+        typename table_type::iterator it = table.find(getVector(hash));
+        if (it != table.end() && getIndex(hash) < it->second.size()) {
+            ref = Ref<T>( &(it->second[getIndex(hash)]) );
+        }
+        return ref;
     }
 
     Ref<T> get(uint32_t hash) {
@@ -129,10 +217,10 @@ public:
 
 
 template<typename T>
-class EntityMap {
+class HashMap {
 private:
-    using pair_type = std::pair<uint32_t, T>;
-    using table_type = std::map<uint32_t, T>;
+    using pair_type = std::pair<uint16_t, T>;
+    using table_type = std::map<uint16_t, T>;
     table_type table;
 
 public:
@@ -142,11 +230,20 @@ public:
         return table.size();
     }
 
-    bool hasHash(uint32_t index) const {
+    bool hasHash(uint16_t index) const {
         return table.find(index) != table.end();
     }
 
-    Ref<T> get(uint32_t index) {
+    Ref<T> operator[](uint16_t index) {
+        Ref<T> ref;
+        typename table_type::iterator it = table.find(index);
+        if (it != table.end()) {
+            ref = Ref<T>( &(it->second) );
+        }
+        return ref;
+    }
+
+    Ref<T> get(uint16_t index) {
         Ref<T> ref;
         typename table_type::iterator it = table.find(index);
         if (it != table.end()) {
@@ -163,17 +260,19 @@ public:
         return table.end();
     }
 
-    void insert(uint32_t index) {
+    void insert(uint16_t index) {
         table[index] = T();
     }
 
-    void erase(uint32_t index) {
+    void erase(uint16_t index) {
         typename table_type::iterator it = table.find(index);
         if (it != table.end())
             table.erase(it);
     }
 
 };
+
+
 
 
 
