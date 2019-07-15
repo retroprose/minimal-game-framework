@@ -98,11 +98,11 @@ public:
         return table.size();
     }
 
-    Ref<T> operator[](uint16_t index) {
-        return Ref<T>( &(table[index]) );
+    T& operator[](uint16_t index) {
+        return table[index];
     }
 
-    Ref<T> get(uint16_t index) {
+    Ref<T> find(uint16_t index) {
         return Ref<T>( &(table[index]) );
     }
 
@@ -118,7 +118,7 @@ public:
         std::sort(table.begin(), table,end());
     }
 
-    void insert(uint16_t index) {
+    void extend(uint16_t index) {
         if (index + 1 > table.size()) {
             table.resize(index + 1);
         }
@@ -168,16 +168,13 @@ public:
         return has;
     }
 
-    Ref<T> operator[](uint32_t hash) {
-        Ref<T> ref;
+    T& operator[](uint32_t hash) {
         typename table_type::iterator it = table.find(getVector(hash));
-        if (it != table.end() && getIndex(hash) < it->second.size()) {
-            ref = Ref<T>( &(it->second[getIndex(hash)]) );
-        }
-        return ref;
+        ASSERT(it != table.end() && getIndex(hash) < it->second.size());
+        return it->second[getIndex(hash)];
     }
 
-    Ref<T> get(uint32_t hash) {
+    Ref<T> find(uint32_t hash) {
         Ref<T> ref;
         typename table_type::iterator it = table.find(getVector(hash));
         if (it != table.end() && getIndex(hash) < it->second.size()) {
@@ -234,18 +231,15 @@ public:
         return table.find(index) != table.end();
     }
 
-    Ref<T> operator[](uint16_t index) {
-        Ref<T> ref;
-        typename table_type::iterator it = table.find(index);
-        if (it != table.end()) {
-            ref = Ref<T>( &(it->second) );
-        }
-        return ref;
+    T& operator[](uint16_t index) {
+        auto it = table.find(index);
+        ASSERT(it != table.end());
+        return *it;
     }
 
-    Ref<T> get(uint16_t index) {
+    Ref<T> find(uint16_t index) {
         Ref<T> ref;
-        typename table_type::iterator it = table.find(index);
+        auto it = table.find(index);
         if (it != table.end()) {
             ref = Ref<T>( &(it->second) );
         }
@@ -260,8 +254,10 @@ public:
         return table.end();
     }
 
-    void insert(uint16_t index) {
-        table[index] = T();
+    Ref<T> insert(uint16_t index) {
+        auto ret = table.insert( pair_type(index, T()) );
+        //return Ref<T>( &(*(ret.first)) );
+        return Ref<T>( &(table[index]) );
     }
 
     void erase(uint16_t index) {

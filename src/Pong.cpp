@@ -141,6 +141,7 @@ int main()
 
     auto playerEntity = state.create();
 
+
     {
         state.changeSignature<Body, Color>(playerEntity);
         auto body = state.get<Body>(playerEntity);
@@ -152,6 +153,7 @@ int main()
         body->radius = playerRadius;           // radius of player
         color.set( Cp::Color(1.0f, 1.0f, 1.0f) );      // player will be white (notice we dereference with *)
     }
+
 
     //state.do_thing();
 
@@ -184,6 +186,7 @@ int main()
 
     state.setActive(playerEntity, true);
 */
+
     for (int i = 0; i < 50; ++i) {
         auto e = state.create();
 
@@ -335,7 +338,7 @@ int main()
         window.clear(sf::Color(50, 200, 50));
 
 /*
-        for (auto& vec : state.proxy<Body, Color>()) {
+       for (auto& vec : state.proxy<Body, Color>()) {
             for (auto ref : vec) {
                 std::tie(body, color) = ref;
                 circle.setFillColor(sf::Color(color->r*255, color->g*255, color->b*255));
@@ -346,6 +349,7 @@ int main()
             }
         }
 */
+
         // This will draw all of the entities.
         state.ForEach<Body, Color>([&](Entity entity) {
             auto body = state.get<Body>(entity);

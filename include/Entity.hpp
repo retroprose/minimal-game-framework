@@ -318,19 +318,19 @@ public:
         Entity::Tracked entity;
         if (freeData.head == EndOfList) {
             entity.index = generationData.size();
-            generationData.insert(entity.index);
-            hashData.insert(entity.index);
-            generationData[entity.index].set( GenerationInfo(1) );
-            hashData[entity.index].set( Hash() );
+            generationData.extend(entity.index);
+            hashData.extend(entity.index);
+            generationData[entity.index] = GenerationInfo(1);
+            hashData[entity.index] = Hash();
         } else {
             entity.index = freeData.head;
-            freeData.head = hashData.get(entity.index)->index();
-            hashData[entity.index].set( Hash() );
+            freeData.head = hashData[entity.index].index();
+            hashData[entity.index] = Hash();
             if (freeData.head == EndOfList)
                 freeData.tail = EndOfList;
         }
         entity.untracked = 0;
-        entity.generation = generationData.get(entity.index)->generation;
+        entity.generation = generationData[entity.index].generation;
         return Entity(entity);
     }
 
@@ -349,14 +349,13 @@ public:
         // generate signature hash
         CPP17_FOLD( nh.signature |= (0x0001 << vector_map_sequence::find(Ns)) );
 
-        Hash oldHash = hashData[entity.index()].get();
-        auto newInfo = freeData[nh.signature];
+        Hash oldHash = hashData[entity.index()];
+        auto newInfo = freeData.find(nh.signature);
         if ( newInfo.isNull() ) {
             nh.index = 0;
             if (nh.signature != 0) {
-                freeData.insert(nh.signature);
-                freeData[nh.signature].set( FreeInfo() );
-                auto asdf = freeData[nh.signature];
+                newInfo = freeData.insert(nh.signature);
+                *newInfo = FreeInfo();
             }
         } else {
             if (newInfo->head == EndOfList) {
@@ -364,15 +363,15 @@ public:
                 ++(newInfo->size);
             } else {
                 nh.index = newInfo->head;
-                newInfo->head = entityData[Hash(nh).raw()].get();
+                newInfo->head = entityData[Hash(nh).raw()];
             }
         }
         Hash newHash = Hash(nh);
 
-        auto oldInfo = freeData[oldHash.signature()];
+        auto oldInfo = freeData.find(oldHash.signature());
         if ( !oldInfo.isNull() ) {
-            activeData[oldHash.raw()]->unsetBit(7);
-            entityData[oldHash.raw()].set(oldInfo->head);
+            activeData[oldHash.raw()].unsetBit(7);
+            entityData[oldHash.raw()] = oldInfo->head;
             oldInfo->head = oldHash.index();
         }
 
@@ -383,11 +382,11 @@ public:
         CPP17_FOLD( std::get<Ns>(data).move(oldHash.raw(), newHash.raw()) );
 
         if (newHash.signature() != 0) {
-            activeData[newHash.raw()]->unsetBit(7);
-            entityData[newHash.raw()].set( entity.index() );
+            activeData[newHash.raw()].unsetBit(7);
+            entityData[newHash.raw()] = entity.index();
         }
 
-        hashData[entity.index()].set(newHash);
+        hashData[entity.index()] = newHash;
     }
 
     template<uint32_t... Ns, typename F>
@@ -401,7 +400,7 @@ public:
         CPP17_FOLD( sigHash |= (0x0001 << vector_map_sequence::find(Ns)) );
         for (auto& kv : entityData) {
             for (auto& index : kv.second) {
-                entity.generation = generationData[index]->generation;
+                entity.generation = generationData[index].generation;
                 entity.index = index;
                 func( Entity(entity) );
             }
@@ -424,7 +423,7 @@ private:
         Ref<T> get(Entity entity) {
             auto& componentData = std::get<COMP>(state.data);
             auto& hashData = std::get<State::hashComp>(state.data);
-            return componentData[hashData[entity.index()]->raw()];
+            return componentData.find(hashData[entity.index()].raw());
         }
 
         //Ref<T> get(Hash hash) {
