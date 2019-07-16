@@ -98,6 +98,10 @@ public:
         return table.size();
     }
 
+    const T& operator[](uint16_t index) const {
+        return table[index];
+    }
+
     T& operator[](uint16_t index) {
         return table[index];
     }
@@ -119,8 +123,8 @@ public:
     }
 
     void extend(uint16_t index) {
-        if (index + 1 > table.size()) {
-            table.resize(index + 1);
+        if ((uint32_t)(index + 1) > table.size()) {
+            table.resize((uint32_t)(index + 1));
         }
     }
 
@@ -135,9 +139,12 @@ public:
 
 template<typename T>
 class VectorMap {
+public:
+     using table_type = std::map<uint32_t, std::vector<T>>;
+     using vector_iterator = typename std::vector<T>::iterator;
+
 private:
     using pair_type = std::pair<uint32_t, std::vector<T>>;
-    using table_type = std::map<uint32_t, std::vector<T>>;
     table_type table;
 
 public:
@@ -183,15 +190,23 @@ public:
         return ref;
     }
 
-    typename table_type::const_iterator begin() const {
+    typename table_type::iterator begin() {
         return table.begin();
     }
 
-    typename table_type::const_iterator end() const {
+    typename table_type::iterator end() {
         return table.end();
     }
 
-     void move(uint32_t oldHash, uint32_t newHash) {
+    vector_iterator begin(uint16_t signature) {
+        return table[signature].begin();
+    }
+
+    vector_iterator end(uint16_t signature) {
+        return table[signature].begin();
+    }
+
+    void move(uint32_t oldHash, uint32_t newHash) {
         typename table_type::iterator newSig = table.find(getVector(newHash));
         if (newSig == table.end()) {
             if (getVector(newHash) == 0) return;
@@ -246,17 +261,18 @@ public:
         return ref;
     }
 
-    typename table_type::const_iterator begin() const {
+    typename table_type::iterator begin() {
         return table.begin();
     }
 
-    typename table_type::const_iterator end() const {
+    typename table_type::iterator end() {
         return table.end();
     }
 
     Ref<T> insert(uint16_t index) {
-        auto ret = table.insert( pair_type(index, T()) );
+        //auto ret = table.insert( pair_type(index, T()) );
         //return Ref<T>( &(*(ret.first)) );
+        table.insert( pair_type(index, T()) );
         return Ref<T>( &(table[index]) );
     }
 

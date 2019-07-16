@@ -23,6 +23,7 @@ private:
 
     template<uint32_t H, uint32_t... Ns>
     struct MakeHelper<H, Ns...> {
+        static const uint32_t size = sizeof...(Ns) + 1;
         static const uint32_t head = H;
         using tail = MakeHelper<Ns...>;
         constexpr static uint32_t value[sizeof...(Ns) + 2] = { H, Ns..., Null };
@@ -31,6 +32,7 @@ private:
             index = (H == key) ? H : index;
             CPP17_FOLD( index = (Ns == key) ? Ns : index );
             ASSERT(index != Null);
+            return index;
         }
     };
 
@@ -227,6 +229,9 @@ public:
     template<typename T> struct needs_move                  { static const bool value = false; };
     template<typename T> struct needs_move<VectorMap<T>>    { static const bool value = true;  };
 
+    template<typename T> struct dynamic_comp                { static const bool value = false; };
+    template<typename T> struct dynamic_comp<HashMap<T>>    { static const bool value = true;  };
+
     constexpr static uint16_t EndOfList = 0xffff;
 
     struct GenerationInfo {
@@ -266,10 +271,6 @@ public:
         HashMap<FreeInfo>,      // free hashes -2
         Single<FreeComp>        // free entities -1
     >;
-
-    //using value_type = std::tuple<typename Ts::value_type...>;
-    //using ref_type = std::tuple<Ref<typename Ts::value_type>...>;
-
     constexpr static size_t pack_size = std::tuple_size<data_type>::value;
 
     template<uint32_t N>
@@ -278,8 +279,14 @@ public:
     template<uint32_t N>
     using component_type = typename std::tuple_element<N, data_type>::type::value_type;
 
-    using vector_map_sequence = TSequence::Remove<needs_move, data_type, TSequence::Range0<pack_size - 6>>;
+    template<uint32_t... Ns>
+    using ref_type = std::tuple<Ref<component_type<Ns>>...>;
 
+    template<uint32_t... Ns>
+    using iter_type = std::tuple<typename std::vector<component_type<Ns>>::iterator...>;
+
+    using vector_map_sequence = TSequence::Remove<needs_move, data_type, TSequence::Range0<pack_size - 6>>;
+    using dynamic_comp_sequence = TSequence::Remove<dynamic_comp, data_type, TSequence::Range0<pack_size - 6>>;
 
     constexpr static uint32_t hashComp = pack_size - 6;
     constexpr static uint32_t generationComp = pack_size - 5;
@@ -288,28 +295,61 @@ public:
     constexpr static uint32_t freeHashComp = pack_size - 2;
     constexpr static uint32_t freeEntityComp = pack_size - 1;
 
+    /*
+    template<uint32_t... Ns>
+    struct Reference {
+        Entity entity;
+        Hash hash;
+        ref_type<Ns...> pack;
+    };
+*/
 
     data_type data;
 
+/*
+    void extend(uint16_t e) {
+        auto& generationData = std::get<State::generationComp>(data);
+        auto& hashData = std::get<State::hashComp>(data);
+        uint16_t s = generationData.size();
+        Entity::Tracked entity;
+        entity.untracked = 0;
+        entity.generation = 0;
+        generationData.extend(e);
+        hashData.extend(e);
+        for (uint16_t i = s; i < e; ++i) {
+            entity.index = i;
+            destroy( Entity(entity) );
+        }
+    }
 
-    /*
-    *Extend
-    ReserveSignature  // needs comps
+    template<uint32_t... Ns>
+    void reserveSignature(uint16_t count) {
+        auto& hashData = std::get<State::hashComp>(data);
+        auto& activeData = std::get<State::activeComp>(data);
+        auto& entityData = std::get<State::entityComp>(data);
 
-    *Create
-    Destroy entity
+        Hash::SignatureIndex nh;
+        Hash::SignatureIndex oh;
 
-    *Valid
-    GetSignature
+        nh.index = count;
+        nh.signature = 0x0000;
 
-    ChangeSignature entity, signature   // needs comps
+        oh.index = 0;
+        oh.signature = 0x0000;
 
+        Hash newHash = Hash(nh);
+        Hash oldHash = Hash(oh);
 
-    *EntityFromHash
-    *HashFromEntity
+        // generate signature hash
+        CPP17_FOLD( nh.signature |= (0x0001 << vector_map_sequence::find(Ns)) );
 
-    ForEach
-    */
+        entityData.move( oldHash.raw(), newHash.raw() );
+        activeData.move( oldHash.raw(), newHash.raw() );
+
+        // move all components needed to move
+        CPP17_FOLD( std::get<Ns>(data).move(oldHash.raw(), newHash.raw()) );
+    }
+*/
 
     Entity create() {
         auto& freeData = std::get<State::freeEntityComp>(data).get();
@@ -334,6 +374,57 @@ public:
         return Entity(entity);
     }
 
+    bool valid(Entity entity) const {
+        if ( entity.untracked() == 1 || std::get<State::generationComp>(data)[entity.index()].generation == entity.generation() ) {
+            return true;
+        }
+        return false;
+    }
+
+    uint32_t signature(Entity entity) {
+        //auto& activeData = std::get<State::activeComp>(data);
+        //auto& hashData = std::get<State::hashComp>(data);
+        return 0;
+    }
+/*
+    Entity entityFromHash(Hash hash) {
+        auto& generationData = std::get<State::generationComp>(data);
+        auto& entityData = std::get<State::entityComp>(data);
+        Entity::Tracked entity;
+        entity.untracked = 0;
+        entity.index = entityData[hash.raw()];
+        entity.generation = generationData[hash.raw()].generation;
+        return Entity(entity);
+    }
+
+    Hash hashFromEntity(Entity entity) {
+        auto& hashData = std::get<State::hashComp>(data);
+        return hashData[entity.index()];
+    }
+*/
+    void activate(Entity entity) {
+        ASSERT(valid(entity));
+        auto& hashData = std::get<State::hashComp>(data);
+        ASSERT(hashData[entity.index()].signature() != 0);
+        auto& activeData = std::get<State::activeComp>(data);
+        activeData[hashData[entity.index()].raw()].setBit(7);
+    }
+
+    void deactivate(Entity entity) {
+        ASSERT(valid(entity));
+        auto& hashData = std::get<State::hashComp>(data);
+        ASSERT(hashData[entity.index()].signature() != 0);
+        auto& activeData = std::get<State::activeComp>(data);
+        activeData[hashData[entity.index()].raw()].unsetBit(7);
+    }
+
+    bool getActive(Entity entity) {
+        ASSERT(valid(entity));
+        auto& hashData = std::get<State::hashComp>(data);
+        ASSERT(hashData[entity].signature() != 0);
+        auto& activeData = std::get<State::activeComp>(data);
+        return activeData[hashData[entity.index()]].getBit(7);
+    }
 
     template<uint32_t... Ns>
     void changeSignature(Entity entity) {
@@ -344,15 +435,19 @@ public:
 
         Hash::SignatureIndex nh;
 
+        nh.index = 0;
         nh.signature = 0x0000;
 
         // generate signature hash
         CPP17_FOLD( nh.signature |= (0x0001 << vector_map_sequence::find(Ns)) );
 
         Hash oldHash = hashData[entity.index()];
+
+        if (oldHash.signature() == nh.signature) return;
+
         auto newInfo = freeData.find(nh.signature);
         if ( newInfo.isNull() ) {
-            nh.index = 0;
+            //nh.index = 0;
             if (nh.signature != 0) {
                 newInfo = freeData.insert(nh.signature);
                 *newInfo = FreeInfo();
@@ -389,28 +484,51 @@ public:
         hashData[entity.index()] = newHash;
     }
 
-    template<uint32_t... Ns, typename F>
-    void ForEach(F func) {
+    /*
+    void destroy(Entity entity) {
+        changeSignature(entity);
+        auto& freeData = std::get<State::freeEntityComp>(data).get();
         auto& generationData = std::get<State::generationComp>(data);
-        auto& entityData = std::get<State::entityComp>(data);
-        Entity::Tracked entity;
-        entity.untracked = 0;
-        uint16_t sigHash = 0x0000;
-        // generate signature hash
-        CPP17_FOLD( sigHash |= (0x0001 << vector_map_sequence::find(Ns)) );
-        for (auto& kv : entityData) {
-            for (auto& index : kv.second) {
-                entity.generation = generationData[index].generation;
-                entity.index = index;
-                func( Entity(entity) );
+        auto& hashData = std::get<State::hashComp>(data);
+        if (generationData[entity.index()].generation == 0x7fff) {
+            //    For debugging it's good to know if we hit the
+            //    end of a generation increment.  Otherwise we
+            //    can just let it turn over at our own risk...
+
+            //    If this happens, try using the Extend function
+            //    to get more active entities from the start.
+            ASSERT(false);
+            //generationData[entity.index()].unsafe = 0;
+            //generationData[entity.index()].generation = 1;
+            //hashData[entity.index()] = Hash(0, EndOfList);
+            //if (freeData.head == EndOfList) {
+            //    freeData.head = entity.index();
+            //} else {
+            //    hashData[freeData.tail].index() = entity.index();
+            //}
+            //freeData.tail = entity.index();
+        } else {
+            // we won't increment if unsafe is set to 1
+            generationData[entity.index()].unsafe = 0;
+            ++generationData[entity.index()].generation;
+            hashData[entity.index()] = Hash(0, EndOfList);
+            if (freeData.head == EndOfList) {
+                freeData.head = entity.index();
+            } else {
+                hashData[freeData.tail] = Hash(0, entity.index());
             }
+            freeData.tail = entity.index();
         }
     }
+*/
 
 
 private:
     template<typename T, uint32_t COMP>
     class IComponent;
+
+    template<typename T, uint32_t COMP>
+    friend class IComponent;
 
     template<typename T, uint32_t COMP>
     class IComponent<VectorMap<T>, COMP> {
@@ -420,39 +538,221 @@ private:
     public:
         IComponent(State* s) : state(*s) { }
 
-        Ref<T> get(Entity entity) {
+        /*
+        void add(Entity entity) {
+            auto& componentData = std::get<COMP>(state.data);
+            auto& hashData = std::get<State::hashComp>(state.data);
+            // update active data
+        }
+
+        void remove(Entity entity) {
+            auto& componentData = std::get<COMP>(state.data);
+            auto& hashData = std::get<State::hashComp>(state.data);
+            // update active data
+        }
+*/
+
+        Ref<T> find(Entity entity) {
             auto& componentData = std::get<COMP>(state.data);
             auto& hashData = std::get<State::hashComp>(state.data);
             return componentData.find(hashData[entity.index()].raw());
         }
 
-        //Ref<T> get(Hash hash) {
-        //    return std::get<COMP>(data).get(hash);
-        //}
+        Ref<T> find(Hash hash) {
+            return std::get<COMP>(state.data).get(hash);
+        }
+
+        Ref<T> find(Entity entity, Hash hash) {
+            auto& componentData = std::get<COMP>(state.data);
+            return componentData.find( hash.raw() );
+        }
 
     };
+
     template<typename T, uint32_t COMP>
-    friend class IComponent;
+    class IComponent<HashMap<T>, COMP> {
+    private:
+        State& state;
+
+    public:
+        IComponent(State* s) : state(*s) { }
+/*
+        typename HashMap<T>::table_type::iterator begin() {
+            auto& componentData = std::get<COMP>(state.data);
+            return componentData.begin();
+        }
+
+        typename HashMap<T>::table_type::iterator end() {
+            auto& componentData = std::get<COMP>(state.data);
+            return componentData.end();
+        }
+*/
+        Ref<T> find(Entity entity) {
+            auto& componentData = std::get<COMP>(state.data);
+            return componentData.find( entity.index() );
+        }
+
+        Ref<T> find(Entity entity, Hash hash) {
+            auto& componentData = std::get<COMP>(state.data);
+            return componentData.find( entity.index() );
+        }
+
+    };
 
 public:
 
+    template<typename T, typename S, typename R>
+    struct reference_helper;
+
+    template<typename T, typename S, uint32_t... Ns>
+    struct reference_helper<T, S, TSequence::Make<Ns...>> {
+        static void invoke(State& state, T& t, Entity entity, Hash hash) {
+            CPP17_FOLD( std::get<Ns>(t) = state.container<S::value[Ns]>().find(entity, hash) );
+        }
+    };
+
+    template<uint32_t... Ns>
+    ref_type<Ns...> reference(Entity entity) {
+        auto& hashData = std::get<State::hashComp>(data);
+        Hash hash = hashData[entity.index()];
+        ref_type<Ns...> ref;
+        reference_helper<ref_type<Ns...>, TSequence::Make<Ns...>, TSequence::Range0<sizeof...(Ns)>>::invoke(*this, ref, entity, hash);
+        return ref;
+    }
 
     template<uint32_t N>
-    auto get(Entity entity) -> decltype(IComponent<container_type<N>, N>(this).get(entity)) {
-        return IComponent<container_type<N>, N>(this).get(entity);
+    auto container() -> decltype(IComponent<container_type<N>, N>(this)) {
+        return IComponent<container_type<N>, N>(this);
     }
-/*
+
     template<uint32_t N>
-    auto get(Hash hash) -> decltype(IComponent<component_type<N>, N>(this).get(hash)) {
-        return IComponent<component_type<N>, N>(this).get(hash);
+    auto find(Entity entity) -> decltype(IComponent<container_type<N>, N>(this).find(entity)) {
+        return IComponent<container_type<N>, N>(this).find(entity);
     }
-*/
 
-//    template<uint32_t N>
-//    auto get(Entity entity) -> uint32_t {
-//        return N;
-//    }
+    /*
+        This 'container proxy' is used to iterate though signatures of components
+    */
+    template<typename T, typename P, typename S, typename R>
+    class ContainerProxy;
 
+    template<typename T, typename P, typename S, uint32_t... Ns>
+    class ContainerProxy<T, P, S, TSequence::Make<Ns...>> {
+    public:
+        ContainerProxy(State* s, uint16_t g) : state(s), signature(g) { }
+
+        class Iterator {
+        public:
+            Iterator(State* s, uint16_t g) : state(s) {
+                hash.signature = g;
+            }
+
+            bool operator==(const Iterator& rhs) const {
+                return table == rhs.table;
+            }
+
+            bool operator!=(const Iterator& rhs) const {
+                return table != rhs.table;
+            }
+
+            T& operator*() {
+                CPP17_FOLD( std::get<Ns>(references) = Ref<component_type<S::value[Ns]>>( &(*(std::get<Ns>(pack))) ) );
+                //references.hash = Hash(hash.signature, hash.index);
+                //references.entity = ?;
+                return references;
+            }
+
+            Iterator& operator++() {
+                for (;;) {
+                    ++hash.index;
+                    ++active;
+                    CPP17_FOLD( ++(std::get<Ns>(pack)) );
+                    if (active == active_end) {
+                        for (;;) {
+                             ++table;
+                             if (table == table_end) {
+                                return *this;
+                             }
+                             if ( (table->first & hash.signature) == hash.signature ) {
+                                hash.index = 0;
+                                active = table->second.begin();
+                                active_end = table->second.end();
+                                CPP17_FOLD( std::get<Ns>(pack) = std::get<S::value[Ns]>(state->data).begin(table->first) );
+                                break;
+                             }
+                        }
+                    }
+                    if (active->getBit(7) == true) {
+                        return *this;
+                    }
+                }
+            }
+
+        private:
+            friend class ContainerProxy;
+
+            using table_iterator = typename container_type<activeComp>::table_type::iterator;
+            using vector_iterator = typename std::vector<component_type<activeComp>>::iterator;
+
+            State* state;
+            table_iterator table;
+            table_iterator table_end;
+            vector_iterator active;
+            vector_iterator active_end;
+
+            P pack;
+            T references;
+
+            Entity::Tracked entity;
+            Hash::SignatureIndex hash;
+        };
+
+        Iterator begin() {
+            auto& activeData = std::get<activeComp>(state->data);
+            Iterator it(state, signature);
+            it.table_end = activeData.end();
+            it.table = activeData.begin();
+            while ( (it.table->first & signature) != signature && it.table != it.table_end ) {
+                ++it.table;
+            }
+            if ( it.table != it.table_end ) {
+                //it.hash.index = 0;
+                it.active = it.table->second.begin();
+                it.active_end = it.table->second.end();
+                CPP17_FOLD( std::get<Ns>(it.pack) = std::get<S::value[Ns]>(state->data).begin(it.table->first) );
+                if ( it.active != it.active_end && it.active->getBit(7) == false ) {
+                    ++it;
+                }
+            }
+            return it;
+        }
+
+        Iterator end() {
+            auto& activeData = std::get<activeComp>(state->data);
+            Iterator it(state, signature);
+            it.table_end = activeData.end();
+            it.table = it.table_end;
+            return it;
+        }
+
+    private:
+        State* state;
+        uint16_t signature;
+    };
+
+    template<typename T, typename P, typename S, typename R>
+    friend class ContainerProxy;
+
+    template<uint32_t... Ns>
+    using ContainerProxyHelp = ContainerProxy<ref_type<Ns...>, iter_type<Ns...>, TSequence::Make<Ns...>, TSequence::Range0<sizeof...(Ns)>>;
+
+    template<uint32_t... Ns>
+    ContainerProxyHelp<Ns...> iterate() {
+        // make signature here
+        uint16_t signature = 0x0000;
+        CPP17_FOLD( signature |= (0x0001 << vector_map_sequence::find(Ns)) );
+        return ContainerProxyHelp<Ns...>(this, signature);
+    }
 
 };
 
