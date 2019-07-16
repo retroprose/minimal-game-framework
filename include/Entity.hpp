@@ -4,6 +4,18 @@
 
 #include <Container.hpp>
 
+/*
+    TSequence
+    Entity
+    Hash
+    Any
+    State
+
+    Ref
+    Vector
+    HashMap
+    VectorMap
+*/
 
 
 struct cpp17_fold_expand_type {
@@ -223,6 +235,68 @@ private:
 
 
 
+class Any {
+private:
+    constexpr static const size_t MaxBuffer = 8;
+
+    uint8_t buffer_[MaxBuffer];
+
+    template<bool C, typename T = void>
+    struct enable_if {
+        typedef T type;
+    };
+
+    template<typename T>
+    struct enable_if<false, T> { };
+
+    struct Base {
+        virtual void print() = 0;
+        virtual void move(Hash oldHash, Hash newHash) = 0;
+    };
+
+    template<typename T>
+    struct Derived : public Base {
+        //
+        //  Print function!
+        // can specialize this if you want!
+        //
+        //  template<typename _1> static typename enable_if<Print<_1>::value, RETURN_TYPE (void)>::type invoke(_1& t) {
+        //
+        struct Print {
+            template <typename U, U> struct type_check;
+            template <typename _1> static uint16_t &chk(type_check<void (_1::*)(), &_1::print> *);
+            template <typename   > static  uint8_t &chk(...);
+            static bool const value = sizeof(chk<T>(0)) == sizeof(uint16_t);
+            template<typename _1> static typename enable_if<!Print::value>::type invoke(T& t) { std::cout << "DEFAULT!" << std::endl; }
+            template<typename _1> static typename enable_if<Print::value>::type invoke(T& t) { t.print(); }
+        };
+        T t_;
+        Derived(const T& t) : t_(t) { }
+        void print() { Print::invoke(t_); }
+        void move(Hash oldHash, Hash newHash) { /*Move::<T>::invoke(t_, oldHash, newHash);*/ }
+    };
+
+    Base* base() { return reinterpret_cast<Base*>(buffer_); }
+
+public:
+    Any() {
+        ASSERT(false);
+    }
+
+    template<typename T>
+    Any(T& t) {
+        ASSERT(sizeof(Derived<T>) <= MaxBuffer);
+        Base* d = new (buffer_) Derived<T>(t);
+        ASSERT(d - base() == 0);
+    }
+
+    Base* operator->() { return reinterpret_cast<Base*>(buffer_); }
+
+};
+
+
+
+
 template<typename... Ts>
 class State {
 public:
@@ -287,6 +361,7 @@ public:
 
     using vector_map_sequence = TSequence::Remove<needs_move, data_type, TSequence::Range0<pack_size - 6>>;
     using dynamic_comp_sequence = TSequence::Remove<dynamic_comp, data_type, TSequence::Range0<pack_size - 6>>;
+    using all_sequence = TSequence::Range0<pack_size - 6>;
 
     constexpr static uint32_t hashComp = pack_size - 6;
     constexpr static uint32_t generationComp = pack_size - 5;
@@ -521,36 +596,16 @@ public:
         }
     }
 
-
-
-private:
     template<typename T, uint32_t COMP>
     class IComponent;
 
-    template<typename T, uint32_t COMP>
-    friend class IComponent;
-
-    template<typename T, uint32_t COMP>
+     template<typename T, uint32_t COMP>
     class IComponent<VectorMap<T>, COMP> {
     private:
         State& state;
 
     public:
         IComponent(State* s) : state(*s) { }
-
-        /*
-        void add(Entity entity) {
-            auto& componentData = std::get<COMP>(state.data);
-            auto& hashData = std::get<State::hashComp>(state.data);
-            // update active data
-        }
-
-        void remove(Entity entity) {
-            auto& componentData = std::get<COMP>(state.data);
-            auto& hashData = std::get<State::hashComp>(state.data);
-            // update active data
-        }
-*/
 
         Ref<T> find(Entity entity) {
             auto& componentData = std::get<COMP>(state.data);
@@ -577,6 +632,18 @@ private:
     public:
         IComponent(State* s) : state(*s) { }
 /*
+        void add(Entity entity) {
+            auto& componentData = std::get<COMP>(state.data);
+            auto& hashData = std::get<State::hashComp>(state.data);
+            // update active data
+        }
+
+        void remove(Entity entity) {
+            auto& componentData = std::get<COMP>(state.data);
+            auto& hashData = std::get<State::hashComp>(state.data);
+            // update active data
+        }
+
         typename HashMap<T>::table_type::iterator begin() {
             auto& componentData = std::get<COMP>(state.data);
             return componentData.begin();
@@ -599,7 +666,8 @@ private:
 
     };
 
-public:
+    template<typename T, uint32_t COMP>
+    friend class IComponent;
 
     template<typename T, typename S, typename R>
     struct reference_helper;
@@ -621,14 +689,27 @@ public:
     }
 
     template<uint32_t N>
+    auto find(Entity entity) -> decltype(IComponent<container_type<N>, N>(this).find(entity)) {
+        return IComponent<container_type<N>, N>(this).find(entity);
+    }
+
+    template<uint32_t N>
     auto container() -> decltype(IComponent<container_type<N>, N>(this)) {
         return IComponent<container_type<N>, N>(this);
     }
 
-    template<uint32_t N>
-    auto find(Entity entity) -> decltype(IComponent<container_type<N>, N>(this).find(entity)) {
-        return IComponent<container_type<N>, N>(this).find(entity);
-    }
+    template<typename S>
+    struct any_helper;
+
+    template<uint32_t... Ns>
+    struct any_helper<TSequence::Make<Ns...>> {
+        using func_ptr = decltype(&State::container<0>);
+        static func_ptr table[] = { &State::container<Ns>... };
+    };
+
+    //Any any(uint32_t comp) {
+    //    return Any( this->(*(any_helper<all_sequence>::table[comp]))() );
+    //}
 
     /*
         This 'container proxy' is used to iterate though signatures of components
@@ -667,18 +748,18 @@ public:
                     CPP17_FOLD( ++(std::get<Ns>(pack)) );
                     if (active == active_end) {
                         for (;;) {
-                             ++table;
-                             if (table == table_end) {
+                            ++table;
+                            if (table == table_end) {
                                 return *this;
-                             }
-                             if ( (table->first & signature) == signature ) {
+                            }
+                            if ( (table->first & signature) == signature ) {
                                 hash.signature = signature;
                                 hash.index = 0;
                                 active = table->second.begin();
                                 active_end = table->second.end();
                                 CPP17_FOLD( std::get<Ns>(pack) = std::get<S::value[Ns]>(state->data).begin(table->first) );
                                 break;
-                             }
+                            }
                         }
                     }
                     if (active->getBit(7) == true) {
