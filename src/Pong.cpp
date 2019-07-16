@@ -188,8 +188,9 @@ int main()
             }
         });
 */
-/*
+
         for ( auto& ref : state.iterate<Body>() ) {
+            //std::cout << ref.hash.signature() << ", " << ref.hash.index() << std::endl;
             Entity entity = state.entityFromHash(ref.hash);
             if (entity != playerEntity) {
                 // every moving entity has a chance of being deleted
@@ -234,7 +235,7 @@ int main()
             //state.setActive(e, true);
             state.activate(e);
         }
-*/
+
 
 
         // convert the sfml vector to our math vector
@@ -287,7 +288,7 @@ int main()
 
 
         for ( auto& ref : state.iterate<Body>() ) {
-            std::tie(body) = ref;
+            std::tie(body) = ref.pack;
             body->position += body->velocity;
         }
 
@@ -311,7 +312,7 @@ int main()
 
         // This will draw all of the entities.
         for ( auto& ref : state.iterate<Body, Color>() ) {
-            std::tie(body, color) = ref;
+            std::tie(body, color) = ref.pack;
             circle.setFillColor(sf::Color(color->r*255, color->g*255, color->b*255));
             circle.setPosition(body->position.x, body->position.y);
             circle.setRadius(body->radius);

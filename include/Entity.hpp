@@ -295,14 +295,14 @@ public:
     constexpr static uint32_t freeHashComp = pack_size - 2;
     constexpr static uint32_t freeEntityComp = pack_size - 1;
 
-    /*
+
     template<uint32_t... Ns>
     struct Reference {
         Entity entity;
         Hash hash;
         ref_type<Ns...> pack;
     };
-*/
+
 
     data_type data;
 
@@ -386,14 +386,14 @@ public:
         //auto& hashData = std::get<State::hashComp>(data);
         return 0;
     }
-/*
+
     Entity entityFromHash(Hash hash) {
         auto& generationData = std::get<State::generationComp>(data);
         auto& entityData = std::get<State::entityComp>(data);
         Entity::Tracked entity;
         entity.untracked = 0;
         entity.index = entityData[hash.raw()];
-        entity.generation = generationData[hash.raw()].generation;
+        entity.generation = generationData[entity.index].generation;
         return Entity(entity);
     }
 
@@ -401,7 +401,7 @@ public:
         auto& hashData = std::get<State::hashComp>(data);
         return hashData[entity.index()];
     }
-*/
+
     void activate(Entity entity) {
         ASSERT(valid(entity));
         auto& hashData = std::get<State::hashComp>(data);
@@ -484,7 +484,7 @@ public:
         hashData[entity.index()] = newHash;
     }
 
-    /*
+
     void destroy(Entity entity) {
         changeSignature(entity);
         auto& freeData = std::get<State::freeEntityComp>(data).get();
@@ -520,7 +520,7 @@ public:
             freeData.tail = entity.index();
         }
     }
-*/
+
 
 
 private:
@@ -643,9 +643,7 @@ public:
 
         class Iterator {
         public:
-            Iterator(State* s, uint16_t g) : state(s) {
-                hash.signature = g;
-            }
+            Iterator(State* s, uint16_t g) : state(s), signature(g) { }
 
             bool operator==(const Iterator& rhs) const {
                 return table == rhs.table;
@@ -656,8 +654,8 @@ public:
             }
 
             T& operator*() {
-                CPP17_FOLD( std::get<Ns>(references) = Ref<component_type<S::value[Ns]>>( &(*(std::get<Ns>(pack))) ) );
-                //references.hash = Hash(hash.signature, hash.index);
+                CPP17_FOLD( std::get<Ns>(references.pack) = Ref<component_type<S::value[Ns]>>( &(*(std::get<Ns>(pack))) ) );
+                references.hash = Hash(hash.signature, hash.index);
                 //references.entity = ?;
                 return references;
             }
@@ -673,7 +671,8 @@ public:
                              if (table == table_end) {
                                 return *this;
                              }
-                             if ( (table->first & hash.signature) == hash.signature ) {
+                             if ( (table->first & signature) == signature ) {
+                                hash.signature = signature;
                                 hash.index = 0;
                                 active = table->second.begin();
                                 active_end = table->second.end();
@@ -694,6 +693,8 @@ public:
             using table_iterator = typename container_type<activeComp>::table_type::iterator;
             using vector_iterator = typename std::vector<component_type<activeComp>>::iterator;
 
+            uint16_t signature;
+
             State* state;
             table_iterator table;
             table_iterator table_end;
@@ -712,11 +713,12 @@ public:
             Iterator it(state, signature);
             it.table_end = activeData.end();
             it.table = activeData.begin();
-            while ( (it.table->first & signature) != signature && it.table != it.table_end ) {
+            while ( it.table != it.table_end && (it.table->first & signature) != signature ) {
                 ++it.table;
             }
             if ( it.table != it.table_end ) {
-                //it.hash.index = 0;
+                it.hash.index = 0;
+                it.hash.signature = it.table->first;
                 it.active = it.table->second.begin();
                 it.active_end = it.table->second.end();
                 CPP17_FOLD( std::get<Ns>(it.pack) = std::get<S::value[Ns]>(state->data).begin(it.table->first) );
@@ -744,7 +746,7 @@ public:
     friend class ContainerProxy;
 
     template<uint32_t... Ns>
-    using ContainerProxyHelp = ContainerProxy<ref_type<Ns...>, iter_type<Ns...>, TSequence::Make<Ns...>, TSequence::Range0<sizeof...(Ns)>>;
+    using ContainerProxyHelp = ContainerProxy<Reference<Ns...>, iter_type<Ns...>, TSequence::Make<Ns...>, TSequence::Range0<sizeof...(Ns)>>;
 
     template<uint32_t... Ns>
     ContainerProxyHelp<Ns...> iterate() {
