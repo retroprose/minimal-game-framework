@@ -15,6 +15,7 @@
     Vector
     HashMap
     VectorMap
+    EmptyHashMap
 */
 
 
@@ -95,21 +96,17 @@ public:
     template<uint32_t... Ns>
     using Make = MakeHelper<Ns...>;
 
-
     template<uint32_t N>
     using Range0 = typename RangeHelper<N>::type;
 
     template<uint32_t I, uint32_t N>
     using Range = typename RangeHelper<N, I>::type;
 
-
     template <template<typename> typename W, typename T, typename IS = Range0<std::tuple_size<T>::value>, typename OS = Make<>>
     using Remove = typename RemoveIf<W, T, IS>::type;
 
-
     template<typename S, uint32_t V>
     using PushBack = typename AppendBack<V, S>::type;
-
 
 };
 
@@ -234,7 +231,7 @@ private:
 };
 
 
-
+/*
 class Any {
 private:
     constexpr static const size_t MaxBuffer = 8;
@@ -273,7 +270,8 @@ private:
         T t_;
         Derived(const T& t) : t_(t) { }
         void print() { Print::invoke(t_); }
-        void move(Hash oldHash, Hash newHash) { /*Move::<T>::invoke(t_, oldHash, newHash);*/ }
+        void move(Hash oldHash, Hash newHash) { //Move::<T>::invoke(t_, oldHash, newHash);
+         }
     };
 
     Base* base() { return reinterpret_cast<Base*>(buffer_); }
@@ -293,14 +291,14 @@ public:
     Base* operator->() { return reinterpret_cast<Base*>(buffer_); }
 
 };
+*/
 
+template<typename T>    struct needs_move                  { static const bool value = false; };
+template<typename T>    struct needs_move<VectorMap<T>>    { static const bool value = true;  };
 
-template<typename T> struct needs_move                  { static const bool value = false; };
-template<typename T> struct needs_move<VectorMap<T>>    { static const bool value = true;  };
-
-template<typename T> struct dynamic_comp                { static const bool value = false; };
-template<typename T> struct dynamic_comp<HashMap<T>>    { static const bool value = true;  };
-template<> struct dynamic_comp<EmptyHashMap>            { static const bool value = true;  };
+template<typename T>    struct dynamic_comp                { static const bool value = false; };
+template<typename T>    struct dynamic_comp<HashMap<T>>    { static const bool value = true;  };
+template<>              struct dynamic_comp<EmptyHashMap>  { static const bool value = true;  };
 
 template<typename... Ts>
 class State {
@@ -328,9 +326,9 @@ public:
 
     using data_type = std::tuple<
         Ts...,                  // user defined components
-        Vector<Hash>,           // hashes -7
-        Vector<GenerationInfo>, // generation id -6
-        EmptyHashMap,           // active component -5
+        EmptyHashMap,           // active component -7
+        Vector<Hash>,           // hashes -6
+        Vector<GenerationInfo>, // generation id -5
         VectorMap<uint8_t>,     // dynamic comps -4
         VectorMap<uint16_t>,    // entity -3
         HashMap<FreeInfo>,      // free hashes -2
@@ -342,18 +340,18 @@ public:
     using container_type = typename std::tuple_element<N, data_type>::type;
 
     template<uint32_t N>
-    using component_type = typename std::tuple_element<N, data_type>::type::value_type;
+    using component_type = typename container_type<N>::value_type;
 
-    template<uint32_t... Ns>
+    /*template<uint32_t... Ns>
     using ref_type = std::tuple<Ref<component_type<Ns>>...>;
 
     template<uint32_t... Ns>
-    using iter_type = std::tuple<typename std::vector<component_type<Ns>>::iterator...>;
+    using iter_type = std::tuple<typename std::vector<component_type<Ns>>::iterator...>;*/
 
-    using all_sequence = TSequence::Range0<pack_size - 7>;
-    constexpr static uint32_t hashComp = pack_size - 7;
-    constexpr static uint32_t generationComp = pack_size - 6;
-    constexpr static uint32_t activeComp = pack_size - 5;
+    using all_sequence = TSequence::Range0<pack_size - 6>;
+    constexpr static uint32_t activeComp = pack_size - 7;
+    constexpr static uint32_t hashComp = pack_size - 6;
+    constexpr static uint32_t generationComp = pack_size - 5;
     constexpr static uint32_t dynamicComp = pack_size - 4;
     constexpr static uint32_t entityComp = pack_size - 3;
     constexpr static uint32_t freeHashComp = pack_size - 2;
@@ -362,18 +360,19 @@ public:
     using vector_map_sequence = TSequence::Remove<needs_move, data_type, all_sequence>;
     using dynamic_comp_sequence = TSequence::Remove<dynamic_comp, data_type, all_sequence>;
 
+    static const uint32_t activeCompFlagIndex;
     static bool is_active(uint8_t f) {
-        return f & (0x01 << activeComp);
+        return f & (0x01 << activeCompFlagIndex);
     }
 
-
+/*
     template<uint32_t... Ns>
     struct Reference {
         Entity entity;
         Hash hash;
         ref_type<Ns...> pack;
     };
-
+*/
 
     data_type data;
 
@@ -451,7 +450,7 @@ public:
         }
         return false;
     }
-
+/*
     uint32_t signature(Entity entity) {
         uint32_t r = 0x00000000;
         auto& hashData = std::get<State::hashComp>(data);
@@ -492,20 +491,28 @@ public:
 
         return r;
     }
-
-    Entity entityFromHash(Hash hash) {
+*/
+    Entity entityFromIndex(uint16_t index) {
         auto& generationData = std::get<State::generationComp>(data);
-        auto& entityData = std::get<State::entityComp>(data);
         Entity::Tracked entity;
         entity.untracked = 0;
-        entity.index = entityData[hash.raw()];
+        entity.index = index;
         entity.generation = generationData[entity.index].generation;
         return Entity(entity);
     }
 
-    Hash hashFromEntity(Entity entity) {
+    Hash hashFromIndex(uint16_t index) {
         auto& hashData = std::get<State::hashComp>(data);
-        return hashData[entity.index()];
+        return hashData[index];
+    }
+
+    Entity entityFromHash(Hash hash) {
+        auto& entityData = std::get<State::entityComp>(data);
+        return entityFromIndex( entityData[hash.raw()] );
+    }
+
+    Hash hashFromEntity(Entity entity) {
+        return hashFromIndex(entity.index());
     }
 
     template<uint32_t... Ns>
@@ -527,14 +534,6 @@ public:
 
         if (oldHash.signature() == nh.signature) return;
 
-        uint8_t dynamicSig = 0x00;
-        if (oldHash.signature() == 0) {
-            dynamicSig = (uint8_t)oldHash.index();
-        } else {
-            dynamicSig = dynamicData[oldHash.raw()];
-        }
-        dynamicSig &= ~dynamic_comp_sequence::find(activeComp);
-
         auto newInfo = freeData.find(nh.signature);
         if ( newInfo.isNull() ) {
             //nh.index = 0;
@@ -553,10 +552,18 @@ public:
         }
         Hash newHash = Hash(nh);
 
+
+        uint8_t dynamicSig = 0x00;
         auto oldInfo = freeData.find(oldHash.signature());
         if ( !oldInfo.isNull() ) {
             entityData[oldHash.raw()] = oldInfo->head;
             oldInfo->head = oldHash.index();
+            dynamicSig = dynamicData[oldHash.raw()];
+            dynamicSig &= ~(0x01 << activeCompFlagIndex);
+            dynamicData[oldHash.raw()] = dynamicSig;
+        } else {
+            dynamicSig = (uint8_t)oldHash.index();
+            dynamicSig &= ~(0x01 << activeCompFlagIndex);
         }
 
         entityData.move( oldHash.raw(), newHash.raw() );
@@ -615,6 +622,8 @@ public:
         CPP17_FOLD( std::get<Ns>(data).erase(entity.index()) );
     }
 
+
+
     void setActive(Entity entity) {
         add<activeComp>(entity);
     }
@@ -633,10 +642,21 @@ public:
             d = dynamicData[hash.raw()];
         }
 
-        return d & (0x0001 << dynamic_comp_sequence::find(activeComp));
+        return is_active(d);
     }
 
+    template<typename T>
+    struct removeAll;
+    template<uint32_t... Ns>
+    struct removeAll<TSequence::Make<Ns...>> {
+        static void invoke(State* s, Entity entity) {
+            s->remove<Ns...>(entity);
+        }
+    };
+
     void destroy(Entity entity) {
+        // need to remove all dynamic comps here!
+        removeAll<dynamic_comp_sequence>::invoke(this, entity);
         changeSignature(entity);
         auto& freeData = std::get<State::freeEntityComp>(data).get();
         auto& generationData = std::get<State::generationComp>(data);
@@ -672,7 +692,23 @@ public:
         }
     }
 
-
+    template<uint32_t... Ns, typename F>
+    void forEach(F func) {
+        auto& dynamicData = std::get<State::dynamicComp>(data);
+        Hash::SignatureIndex hash;
+        uint16_t signature = 0x0000;
+        CPP17_FOLD( signature |= (0x0001 << vector_map_sequence::find(Ns)) );
+        for (auto& kv : dynamicData) {
+            hash.signature = kv.first;
+            if ( (hash.signature & signature) == signature ) {
+                for (hash.index = 0; hash.index < kv.second.size(); ++hash.index) {
+                    if ( is_active(dynamicData[Hash(hash).raw()]) == true ) {
+                        func( Hash(hash) );
+                    }
+                }
+            }
+        }
+    }
 
     /*
         IComponent classes are for interfacing with the component data from the outside
@@ -695,7 +731,7 @@ public:
         }
 
         Ref<T> find(Hash hash) {
-            return std::get<COMP>(state.data).get(hash);
+            return std::get<COMP>(state.data).find(hash.raw());
         }
 
         Ref<T> find(Entity entity, Hash hash) {
@@ -713,6 +749,16 @@ public:
     public:
         IComponent(State* s) : state(*s) { }
 
+        typename container_type<COMP>::table_type::iterator begin() {
+            auto& componentData = std::get<COMP>(state.data);
+            return componentData.begin();
+        }
+
+        typename container_type<COMP>::table_type::iterator end() {
+            auto& componentData = std::get<COMP>(state.data);
+            return componentData.end();
+        }
+
         Ref<T> find(Entity entity) {
             auto& componentData = std::get<COMP>(state.data);
             return componentData.find( entity.index() );
@@ -728,6 +774,39 @@ public:
     template<typename T, uint32_t COMP>
     friend class IComponent;
 
+
+    template<uint32_t N>
+    auto find(Entity entity) -> decltype(IComponent<container_type<N>, N>(this).find(entity)) {
+        return IComponent<container_type<N>, N>(this).find(entity);
+    }
+
+    template<uint32_t N>
+    auto find(Hash hash) -> decltype(IComponent<container_type<N>, N>(this).find(hash)) {
+        return IComponent<container_type<N>, N>(this).find(hash);
+    }
+
+    template<uint32_t N>
+    auto container() -> decltype(IComponent<container_type<N>, N>(this)) {
+        return IComponent<container_type<N>, N>(this);
+    }
+
+
+    /*
+    template<typename S>
+    struct any_helper;
+
+    template<uint32_t... Ns>
+    struct any_helper<TSequence::Make<Ns...>> {
+        using func_ptr = decltype(&State::container<0>);
+        static func_ptr table[] = { &State::container<Ns>... };
+    };
+
+    //Any any(uint32_t comp) {
+    //    return Any( this->(*(any_helper<all_sequence>::table[comp]))() );
+    //}
+*/
+
+    /*
     template<typename T, typename S, typename R>
     struct reference_helper;
 
@@ -746,33 +825,13 @@ public:
         reference_helper<ref_type<Ns...>, TSequence::Make<Ns...>, TSequence::Range0<sizeof...(Ns)>>::invoke(*this, ref, entity, hash);
         return ref;
     }
+    */
 
-    template<uint32_t N>
-    auto find(Entity entity) -> decltype(IComponent<container_type<N>, N>(this).find(entity)) {
-        return IComponent<container_type<N>, N>(this).find(entity);
-    }
-
-    template<uint32_t N>
-    auto container() -> decltype(IComponent<container_type<N>, N>(this)) {
-        return IComponent<container_type<N>, N>(this);
-    }
-
-    template<typename S>
-    struct any_helper;
-
-    template<uint32_t... Ns>
-    struct any_helper<TSequence::Make<Ns...>> {
-        using func_ptr = decltype(&State::container<0>);
-        static func_ptr table[] = { &State::container<Ns>... };
-    };
-
-    //Any any(uint32_t comp) {
-    //    return Any( this->(*(any_helper<all_sequence>::table[comp]))() );
-    //}
 
     /*
         This 'container proxy' is used to iterate though signatures of components
     */
+    /*
     template<typename T, typename P, typename S, typename R>
     class ContainerProxy;
 
@@ -895,9 +954,11 @@ public:
         CPP17_FOLD( signature |= (0x0001 << vector_map_sequence::find(Ns)) );
         return ContainerProxyHelp<Ns...>(this, signature);
     }
-
+    */
 };
 
+template<typename... Ts>
+const uint32_t State<Ts...>::activeCompFlagIndex = State<Ts...>::dynamic_comp_sequence::find(activeComp);
 
 
 #endif // ENTITY_HPP

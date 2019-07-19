@@ -46,6 +46,12 @@ enum CpType : uint32_t {
     Body
 };
 
+struct EntityRef {
+    Ref<Cp::Body> body;
+    Ref<Cp::Color> color;
+    Ref<Cp::Color> hatColor;
+    Ref<Cp::Controller> controller;
+};
 
 using MyState = State<
     HashMap<Cp::Controller>,
@@ -105,24 +111,27 @@ int main()
     message.setFillColor(sf::Color::White);
     message.setString("Use WASD to move, mouse to move cursor.\nLeft and right mouse button adds and\nRemoves player's hat.");
 
+
+    EntityRef ref;
+
     //
-    Ref<Cp::Body> body;
-    Ref<Cp::Color> color;
+
 
     MyState state;
 
     auto playerEntity = state.create();
 
-
     {
         state.changeSignature<Body, Color>(playerEntity);
-        std::tie(body, color) = state.reference<Body, Color>(playerEntity);
+
+        ref.body = state.find<Body>(playerEntity);
+        ref.color = state.find<Color>(playerEntity);
 
         // notice that references use -> instead of . to access members
-        body->position = Vector2(400, 300);    // set to center of screen
-        body->velocity = Vector2(0, 0);        // zero velocity
-        body->radius = playerRadius;           // radius of player
-        color.set( Cp::Color(1.0f, 1.0f, 1.0f) );      // player will be white (notice we dereference with *)
+        ref.body->position = Vector2(400, 300);    // set to center of screen
+        ref.body->velocity = Vector2(0, 0);        // zero velocity
+        ref.body->radius = playerRadius;           // radius of player
+        *ref.color = Cp::Color(1.0f, 1.0f, 1.0f);      // player will be white (notice we dereference with *)
 
         state.setActive(playerEntity);
     }
@@ -135,29 +144,27 @@ int main()
         // random chance of having a hat
         int r = rand()%100;
         if (r < 10) {
-            //state.addSignature( e, {State::HatColor} ;
-
-            // state.container<HatColor>().add(e);
+            state.add<HatColor>(e);
         }
 
         {
-            std::tie(body, color) = state.reference<Body, Color>(e);
+            ref.body = state.find<Body>(e);
+            ref.color = state.find<Color>(e);
 
-            //auto hatColor = state.hatColor(e);
+            ref.hatColor = state.find<HatColor>(e);
 
-            body->position = Vector2(rand()%800, rand()%600);
-            body->velocity = Vector2(rand()%5, rand()%5);
-            //eref.body->velocity = Vector2(0, 0);
-            body->radius = playerRadius;
-            color.set( Cp::Color(rand()%10000/10000.0f, rand()%10000/10000.0f, rand()%10000/10000.0f) );
+            ref.body->position = Vector2(rand()%800, rand()%600);
+            ref.body->velocity = Vector2(rand()%5, rand()%5);
+            //ref.body->velocity = Vector2(0, 0);
+            ref.body->radius = playerRadius;
+            *ref.color = Cp::Color(rand()%10000/10000.0f, rand()%10000/10000.0f, rand()%10000/10000.0f);
         }
 
         // some will not have hats, so need to check that the reference isn't null first
-        //if (ref.hatColor.isNull() == false) {
-        //    *ref.hatColor = Color(rand()%10000/10000.0f, rand()%10000/10000.0f, rand()%10000/10000.0f);
-        //}
+        if (ref.hatColor.isNull() == false) {
+            *ref.hatColor = Cp::Color(rand()%10000/10000.0f, rand()%10000/10000.0f, rand()%10000/10000.0f);
+        }
 
-        //state.setActive(e, true);
         state.setActive(e);
     }
 
@@ -177,30 +184,16 @@ int main()
         }
 
 
-/*
-        state.ForEach({State::Body}, [&](EntityHash hash) {
-            ref.entity = state.getEntity(hash);
-            if (ref.entity != playerEntity) {
-                // every moving entity has a chance of being deleted
-                if (rand()%100  == 0) {
-                    state.destroy(ref.entity);
-                }
-            }
-        });
-*/
-/*
-        for ( auto& ref : state.iterate<Body>() ) {
+        state.forEach<Body>([&](Hash hash) {
             //std::cout << ref.hash.signature() << ", " << ref.hash.index() << std::endl;
-            Entity entity = state.entityFromHash(ref.hash);
+            Entity entity = state.entityFromHash(hash);
             if (entity != playerEntity) {
                 // every moving entity has a chance of being deleted
                 if (rand()%100  == 0) {
                     state.destroy(entity);
                 }
             }
-        }
-
-
+        });
 
         for (int i = 0; i < 1; i++) {
             auto e = state.create();
@@ -210,33 +203,30 @@ int main()
             // random chance of having a hat
             int r = rand()%100;
             if (r < 10) {
-                //state.addSignature( e, {State::HatColor} ;
-
-                // state.container<HatColor>().add(e);
+                state.add<HatColor>(e);
             }
 
             {
-                std::tie(body, color) = state.reference<Body, Color>(e);
+                ref.body = state.find<Body>(e);
+                ref.color = state.find<Color>(e);
 
-                //auto hatColor = state.hatColor(e);
+                ref.hatColor = state.find<HatColor>(e);
 
-                body->position = Vector2(rand()%800, rand()%600);
-                body->velocity = Vector2(rand()%5, rand()%5);
-                //eref.body->velocity = Vector2(0, 0);
-                body->radius = playerRadius;
-                color.set( Cp::Color(rand()%10000/10000.0f, rand()%10000/10000.0f, rand()%10000/10000.0f) );
+                ref.body->position = Vector2(rand()%800, rand()%600);
+                ref.body->velocity = Vector2(rand()%5, rand()%5);
+                //ref.body->velocity = Vector2(0, 0);
+                ref.body->radius = playerRadius;
+                *ref.color = Cp::Color(rand()%10000/10000.0f, rand()%10000/10000.0f, rand()%10000/10000.0f);
             }
 
             // some will not have hats, so need to check that the reference isn't null first
-            //if (ref.hatColor.isNull() == false) {
-            //    *ref.hatColor = Color(rand()%10000/10000.0f, rand()%10000/10000.0f, rand()%10000/10000.0f);
-            //}
+            if (ref.hatColor.isNull() == false) {
+                *ref.hatColor = Cp::Color(rand()%10000/10000.0f, rand()%10000/10000.0f, rand()%10000/10000.0f);
+            }
 
-            //state.setActive(e, true);
-            //state.activate(e);
-
+            state.setActive(e);
         }
-*/
+
 
 
         // convert the sfml vector to our math vector
@@ -286,12 +276,18 @@ int main()
             ref.body->velocity = ref.controller->move;
         }
 */
-
+/*
 
         for ( auto& ref : state.iterate<Body>() ) {
             std::tie(body) = ref.pack;
             body->position += body->velocity;
         }
+*/
+
+        state.forEach<Body>([&](Hash hash){
+            ref.body = state.find<Body>(hash);
+            ref.body->position += ref.body->velocity;
+        });
 
 
         // Rendering code
@@ -310,7 +306,7 @@ int main()
             }
         }
 */
-
+/*
         // This will draw all of the entities.
         for ( auto& ref : state.iterate<Body, Color>() ) {
             std::tie(body, color) = ref.pack;
@@ -320,14 +316,26 @@ int main()
             circle.setOrigin(body->radius / 2.0f, body->radius / 2.0f);
             window.draw(circle);
         }
+*/
+        // This will draw all of the entities.
+
+        state.forEach<Body, Color>([&](Hash hash) {
+            ref.body = state.find<Body>(hash);
+            ref.color = state.find<Color>(hash);
+
+            circle.setFillColor(sf::Color(ref.color->r*255, ref.color->g*255, ref.color->b*255));
+            circle.setPosition(ref.body->position.x, ref.body->position.y);
+            circle.setRadius(ref.body->radius);
+            circle.setOrigin(ref.body->radius / 2.0f, ref.body->radius / 2.0f);
+            window.draw(circle);
+        });
 
 
-
-/*
-        for (auto& kv : state.hatColor()) {
-            ref.hash = state.getHashFromIndex(kv.first);
-            ref.hatColor = &kv.second;
-            ref.body = state.body(ref.hash);
+        for (auto& kv : state.container<HatColor>()) {
+            Hash hash = state.hashFromIndex(kv.first);
+            Entity entity = state.entityFromIndex(kv.first);
+            ref.hatColor = state.find<HatColor>(entity);
+            ref.body = state.find<Body>(hash);
 
             circle.setFillColor(sf::Color(ref.hatColor->r*255, ref.hatColor->g*255, ref.hatColor->b*255));
             circle.setPosition(ref.body->position.x, ref.body->position.y);
@@ -344,7 +352,7 @@ int main()
             circle.setOrigin(0, 0);
             window.draw(circle);
         }
-*/
+
 
         // draw cursor
         circle.setFillColor(sf::Color::White);

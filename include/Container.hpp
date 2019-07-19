@@ -33,6 +33,7 @@ public:
     }
 
     T* operator -> () {
+        bool b = (!isNull());
         ASSERT( !isNull() );
         return ptr_;
     }
@@ -64,6 +65,11 @@ private:
     T* ptr_; // pointer
 
 };
+
+template<typename T>
+Ref<T> makeRef(T& t) {
+    return Ref<T>(&t);
+}
 
 
 template<typename T>
@@ -230,9 +236,11 @@ public:
 
 template<typename T>
 class HashMap {
+public:
+    using table_type = std::map<uint16_t, T>;
+
 private:
     using pair_type = std::pair<uint16_t, T>;
-    using table_type = std::map<uint16_t, T>;
     table_type table;
 
 public:
