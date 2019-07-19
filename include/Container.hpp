@@ -285,6 +285,12 @@ public:
 };
 
 
+class EmptyHashMap {
+public:
+    void insert(uint16_t index) { }
+    void erase(uint16_t index) { }
+};
+
 
 
 

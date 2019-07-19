@@ -295,17 +295,16 @@ public:
 };
 
 
+template<typename T> struct needs_move                  { static const bool value = false; };
+template<typename T> struct needs_move<VectorMap<T>>    { static const bool value = true;  };
 
+template<typename T> struct dynamic_comp                { static const bool value = false; };
+template<typename T> struct dynamic_comp<HashMap<T>>    { static const bool value = true;  };
+template<> struct dynamic_comp<EmptyHashMap>            { static const bool value = true;  };
 
 template<typename... Ts>
 class State {
 public:
-    template<typename T> struct needs_move                  { static const bool value = false; };
-    template<typename T> struct needs_move<VectorMap<T>>    { static const bool value = true;  };
-
-    template<typename T> struct dynamic_comp                { static const bool value = false; };
-    template<typename T> struct dynamic_comp<HashMap<T>>    { static const bool value = true;  };
-
     constexpr static uint16_t EndOfList = 0xffff;
 
     struct GenerationInfo {
@@ -321,15 +320,6 @@ public:
         uint16_t size;
     };
 
-    struct ActiveComp {
-        ActiveComp() : bits(0x00) { }
-        bool getBit(uint8_t index) const    { return bits & (0x01 << index); }
-        void setBit(uint8_t index)          { bits |=  (0x01 << index); }
-        void unsetBit(uint8_t index)        { bits &= ~(0x01 << index); }
-        void clear()                        { bits = 0x00; }
-        uint8_t bits;
-    };
-
     struct FreeComp {
         FreeComp() : head(EndOfList), tail(EndOfList) { }
         uint16_t head;
@@ -338,9 +328,10 @@ public:
 
     using data_type = std::tuple<
         Ts...,                  // user defined components
-        Vector<Hash>,           // hashes -6
-        Vector<GenerationInfo>, // generation id -5
-        VectorMap<ActiveComp>,  // active bit/dynamic comps -4
+        Vector<Hash>,           // hashes -7
+        Vector<GenerationInfo>, // generation id -6
+        EmptyHashMap,           // active component -5
+        VectorMap<uint8_t>,     // dynamic comps -4
         VectorMap<uint16_t>,    // entity -3
         HashMap<FreeInfo>,      // free hashes -2
         Single<FreeComp>        // free entities -1
@@ -359,16 +350,21 @@ public:
     template<uint32_t... Ns>
     using iter_type = std::tuple<typename std::vector<component_type<Ns>>::iterator...>;
 
-    using vector_map_sequence = TSequence::Remove<needs_move, data_type, TSequence::Range0<pack_size - 6>>;
-    using dynamic_comp_sequence = TSequence::Remove<dynamic_comp, data_type, TSequence::Range0<pack_size - 6>>;
-    using all_sequence = TSequence::Range0<pack_size - 6>;
-
-    constexpr static uint32_t hashComp = pack_size - 6;
-    constexpr static uint32_t generationComp = pack_size - 5;
-    constexpr static uint32_t activeComp = pack_size - 4;
+    using all_sequence = TSequence::Range0<pack_size - 7>;
+    constexpr static uint32_t hashComp = pack_size - 7;
+    constexpr static uint32_t generationComp = pack_size - 6;
+    constexpr static uint32_t activeComp = pack_size - 5;
+    constexpr static uint32_t dynamicComp = pack_size - 4;
     constexpr static uint32_t entityComp = pack_size - 3;
     constexpr static uint32_t freeHashComp = pack_size - 2;
     constexpr static uint32_t freeEntityComp = pack_size - 1;
+
+    using vector_map_sequence = TSequence::Remove<needs_move, data_type, all_sequence>;
+    using dynamic_comp_sequence = TSequence::Remove<dynamic_comp, data_type, all_sequence>;
+
+    static bool is_active(uint8_t f) {
+        return f & (0x01 << activeComp);
+    }
 
 
     template<uint32_t... Ns>
@@ -457,9 +453,44 @@ public:
     }
 
     uint32_t signature(Entity entity) {
-        //auto& activeData = std::get<State::activeComp>(data);
-        //auto& hashData = std::get<State::hashComp>(data);
-        return 0;
+        uint32_t r = 0x00000000;
+        auto& hashData = std::get<State::hashComp>(data);
+        Hash hash = hashData[entity.index()];
+        uint16_t s = hash.signature();
+        uint16_t d = hash.index();
+
+        if (hash.signature() != 0) {
+            auto& dynamicData = std::get<State::dynamicComp>(data);
+            d = dynamicData[hash.raw()];
+        }
+
+        if (d & (0x0001 << 0)) r |= (0x00000001 << dynamic_comp_sequence::value[0]);
+        if (d & (0x0001 << 1)) r |= (0x00000001 << dynamic_comp_sequence::value[1]);
+        if (d & (0x0001 << 2)) r |= (0x00000001 << dynamic_comp_sequence::value[2]);
+        if (d & (0x0001 << 3)) r |= (0x00000001 << dynamic_comp_sequence::value[3]);
+        if (d & (0x0001 << 4)) r |= (0x00000001 << dynamic_comp_sequence::value[4]);
+        if (d & (0x0001 << 5)) r |= (0x00000001 << dynamic_comp_sequence::value[5]);
+        if (d & (0x0001 << 6)) r |= (0x00000001 << dynamic_comp_sequence::value[6]);
+        if (d & (0x0001 << 7)) r |= (0x00000001 << dynamic_comp_sequence::value[7]);
+
+        if (s & (0x0001 <<  0)) r |= (0x00000001 << vector_map_sequence::value[ 0]);
+        if (s & (0x0001 <<  1)) r |= (0x00000001 << vector_map_sequence::value[ 1]);
+        if (s & (0x0001 <<  2)) r |= (0x00000001 << vector_map_sequence::value[ 2]);
+        if (s & (0x0001 <<  3)) r |= (0x00000001 << vector_map_sequence::value[ 3]);
+        if (s & (0x0001 <<  4)) r |= (0x00000001 << vector_map_sequence::value[ 4]);
+        if (s & (0x0001 <<  5)) r |= (0x00000001 << vector_map_sequence::value[ 5]);
+        if (s & (0x0001 <<  6)) r |= (0x00000001 << vector_map_sequence::value[ 6]);
+        if (s & (0x0001 <<  7)) r |= (0x00000001 << vector_map_sequence::value[ 7]);
+        if (s & (0x0001 <<  8)) r |= (0x00000001 << vector_map_sequence::value[ 8]);
+        if (s & (0x0001 <<  9)) r |= (0x00000001 << vector_map_sequence::value[ 9]);
+        if (s & (0x0001 << 10)) r |= (0x00000001 << vector_map_sequence::value[10]);
+        if (s & (0x0001 << 11)) r |= (0x00000001 << vector_map_sequence::value[11]);
+        if (s & (0x0001 << 12)) r |= (0x00000001 << vector_map_sequence::value[12]);
+        if (s & (0x0001 << 13)) r |= (0x00000001 << vector_map_sequence::value[13]);
+        if (s & (0x0001 << 14)) r |= (0x00000001 << vector_map_sequence::value[14]);
+        if (s & (0x0001 << 15)) r |= (0x00000001 << vector_map_sequence::value[15]);
+
+        return r;
     }
 
     Entity entityFromHash(Hash hash) {
@@ -477,35 +508,11 @@ public:
         return hashData[entity.index()];
     }
 
-    void activate(Entity entity) {
-        ASSERT(valid(entity));
-        auto& hashData = std::get<State::hashComp>(data);
-        ASSERT(hashData[entity.index()].signature() != 0);
-        auto& activeData = std::get<State::activeComp>(data);
-        activeData[hashData[entity.index()].raw()].setBit(7);
-    }
-
-    void deactivate(Entity entity) {
-        ASSERT(valid(entity));
-        auto& hashData = std::get<State::hashComp>(data);
-        ASSERT(hashData[entity.index()].signature() != 0);
-        auto& activeData = std::get<State::activeComp>(data);
-        activeData[hashData[entity.index()].raw()].unsetBit(7);
-    }
-
-    bool getActive(Entity entity) {
-        ASSERT(valid(entity));
-        auto& hashData = std::get<State::hashComp>(data);
-        ASSERT(hashData[entity].signature() != 0);
-        auto& activeData = std::get<State::activeComp>(data);
-        return activeData[hashData[entity.index()]].getBit(7);
-    }
-
     template<uint32_t... Ns>
     void changeSignature(Entity entity) {
         auto& freeData = std::get<State::freeHashComp>(data);
         auto& hashData = std::get<State::hashComp>(data);
-        auto& activeData = std::get<State::activeComp>(data);
+        auto& dynamicData = std::get<State::dynamicComp>(data);
         auto& entityData = std::get<State::entityComp>(data);
 
         Hash::SignatureIndex nh;
@@ -519,6 +526,14 @@ public:
         Hash oldHash = hashData[entity.index()];
 
         if (oldHash.signature() == nh.signature) return;
+
+        uint8_t dynamicSig = 0x00;
+        if (oldHash.signature() == 0) {
+            dynamicSig = (uint8_t)oldHash.index();
+        } else {
+            dynamicSig = dynamicData[oldHash.raw()];
+        }
+        dynamicSig &= ~dynamic_comp_sequence::find(activeComp);
 
         auto newInfo = freeData.find(nh.signature);
         if ( newInfo.isNull() ) {
@@ -540,25 +555,86 @@ public:
 
         auto oldInfo = freeData.find(oldHash.signature());
         if ( !oldInfo.isNull() ) {
-            activeData[oldHash.raw()].unsetBit(7);
             entityData[oldHash.raw()] = oldInfo->head;
             oldInfo->head = oldHash.index();
         }
 
         entityData.move( oldHash.raw(), newHash.raw() );
-        activeData.move( oldHash.raw(), newHash.raw() );
+        dynamicData.move( oldHash.raw(), newHash.raw() );
 
         // move all components needed to move
         CPP17_FOLD( std::get<Ns>(data).move(oldHash.raw(), newHash.raw()) );
 
         if (newHash.signature() != 0) {
-            activeData[newHash.raw()].unsetBit(7);
             entityData[newHash.raw()] = entity.index();
+            dynamicData[newHash.raw()] = dynamicSig;
+        } else {
+            // new hash is null, move dynamic signature to hash index
+            nh.index = (uint16_t)dynamicSig;
+            newHash = Hash(nh);
         }
 
         hashData[entity.index()] = newHash;
     }
 
+    template<uint32_t... Ns>
+    void add(Entity entity) {
+        auto& hashData = std::get<State::hashComp>(data);
+        auto& hash = hashData[entity.index()];
+
+        uint16_t signature = 0x0000;
+        CPP17_FOLD( signature |= (0x0001 << dynamic_comp_sequence::find(Ns)) );
+
+        if (hash.signature() == 0) {
+            hash = Hash(hash.signature(), hash.index() | signature);
+        } else {
+            auto& dynamicData = std::get<State::dynamicComp>(data);
+            auto& oldSig = dynamicData[hash.raw()];
+            oldSig |= signature;
+        }
+
+        CPP17_FOLD( std::get<Ns>(data).insert(entity.index()) );
+    }
+
+    template<uint32_t... Ns>
+    void remove(Entity entity) {
+        auto& hashData = std::get<State::hashComp>(data);
+        auto& hash = hashData[entity.index()];
+
+        uint16_t signature = 0x0000;
+        CPP17_FOLD( signature |= (0x0001 << dynamic_comp_sequence::find(Ns)) );
+
+        if (hash.signature() == 0) {
+             hash = Hash(hash.signature(), hash.index() & ~signature);
+        } else {
+            auto& dynamicData = std::get<State::dynamicComp>(data);
+            auto& oldSig = dynamicData[hash.raw()];
+            oldSig &= ~signature;
+        }
+
+        CPP17_FOLD( std::get<Ns>(data).erase(entity.index()) );
+    }
+
+    void setActive(Entity entity) {
+        add<activeComp>(entity);
+    }
+
+    void setInactive(Entity entity) {
+        remove<activeComp>(entity);
+    }
+
+    bool isActive(Entity entity) {
+        auto& hashData = std::get<State::hashComp>(data);
+        Hash hash = hashData[entity.index()];
+        uint16_t d = hash.index();
+
+        if (hash.signature() != 0) {
+            auto& dynamicData = std::get<State::dynamicComp>(data);
+            d = dynamicData[hash.raw()];
+        }
+
+        return d & (0x0001 << dynamic_comp_sequence::find(activeComp));
+    }
 
     void destroy(Entity entity) {
         changeSignature(entity);
@@ -596,10 +672,15 @@ public:
         }
     }
 
+
+
+    /*
+        IComponent classes are for interfacing with the component data from the outside
+    */
     template<typename T, uint32_t COMP>
     class IComponent;
 
-     template<typename T, uint32_t COMP>
+    template<typename T, uint32_t COMP>
     class IComponent<VectorMap<T>, COMP> {
     private:
         State& state;
@@ -631,29 +712,7 @@ public:
 
     public:
         IComponent(State* s) : state(*s) { }
-/*
-        void add(Entity entity) {
-            auto& componentData = std::get<COMP>(state.data);
-            auto& hashData = std::get<State::hashComp>(state.data);
-            // update active data
-        }
 
-        void remove(Entity entity) {
-            auto& componentData = std::get<COMP>(state.data);
-            auto& hashData = std::get<State::hashComp>(state.data);
-            // update active data
-        }
-
-        typename HashMap<T>::table_type::iterator begin() {
-            auto& componentData = std::get<COMP>(state.data);
-            return componentData.begin();
-        }
-
-        typename HashMap<T>::table_type::iterator end() {
-            auto& componentData = std::get<COMP>(state.data);
-            return componentData.end();
-        }
-*/
         Ref<T> find(Entity entity) {
             auto& componentData = std::get<COMP>(state.data);
             return componentData.find( entity.index() );
@@ -744,9 +803,9 @@ public:
             Iterator& operator++() {
                 for (;;) {
                     ++hash.index;
-                    ++active;
+                    ++dynamic;
                     CPP17_FOLD( ++(std::get<Ns>(pack)) );
-                    if (active == active_end) {
+                    if (dynamic == dynamic_end) {
                         for (;;) {
                             ++table;
                             if (table == table_end) {
@@ -755,14 +814,14 @@ public:
                             if ( (table->first & signature) == signature ) {
                                 hash.signature = signature;
                                 hash.index = 0;
-                                active = table->second.begin();
-                                active_end = table->second.end();
+                                dynamic = table->second.begin();
+                                dynamic_end = table->second.end();
                                 CPP17_FOLD( std::get<Ns>(pack) = std::get<S::value[Ns]>(state->data).begin(table->first) );
                                 break;
                             }
                         }
                     }
-                    if (active->getBit(7) == true) {
+                    if (is_active(*dynamic) == true) {
                         return *this;
                     }
                 }
@@ -771,16 +830,16 @@ public:
         private:
             friend class ContainerProxy;
 
-            using table_iterator = typename container_type<activeComp>::table_type::iterator;
-            using vector_iterator = typename std::vector<component_type<activeComp>>::iterator;
-
-            uint16_t signature;
+            using table_iterator = typename container_type<dynamicComp>::table_type::iterator;
+            using vector_iterator = typename std::vector<component_type<dynamicComp>>::iterator;
 
             State* state;
+            uint16_t signature;
+
             table_iterator table;
             table_iterator table_end;
-            vector_iterator active;
-            vector_iterator active_end;
+            vector_iterator dynamic;
+            vector_iterator dynamic_end;
 
             P pack;
             T references;
@@ -790,20 +849,20 @@ public:
         };
 
         Iterator begin() {
-            auto& activeData = std::get<activeComp>(state->data);
+            auto& dynamicData = std::get<dynamicComp>(state->data);
             Iterator it(state, signature);
-            it.table_end = activeData.end();
-            it.table = activeData.begin();
+            it.table_end = dynamicData.end();
+            it.table = dynamicData.begin();
             while ( it.table != it.table_end && (it.table->first & signature) != signature ) {
                 ++it.table;
             }
             if ( it.table != it.table_end ) {
                 it.hash.index = 0;
                 it.hash.signature = it.table->first;
-                it.active = it.table->second.begin();
-                it.active_end = it.table->second.end();
+                it.dynamic = it.table->second.begin();
+                it.dynamic_end = it.table->second.end();
                 CPP17_FOLD( std::get<Ns>(it.pack) = std::get<S::value[Ns]>(state->data).begin(it.table->first) );
-                if ( it.active != it.active_end && it.active->getBit(7) == false ) {
+                if ( it.dynamic != it.dynamic_end && is_active( *(it.dynamic) ) == false ) {
                     ++it;
                 }
             }
@@ -811,9 +870,9 @@ public:
         }
 
         Iterator end() {
-            auto& activeData = std::get<activeComp>(state->data);
+            auto& dynamicData = std::get<dynamicComp>(state->data);
             Iterator it(state, signature);
-            it.table_end = activeData.end();
+            it.table_end = dynamicData.end();
             it.table = it.table_end;
             return it;
         }
@@ -838,9 +897,6 @@ public:
     }
 
 };
-
-
-
 
 
 

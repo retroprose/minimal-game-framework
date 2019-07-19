@@ -124,7 +124,7 @@ int main()
         body->radius = playerRadius;           // radius of player
         color.set( Cp::Color(1.0f, 1.0f, 1.0f) );      // player will be white (notice we dereference with *)
 
-        state.activate(playerEntity);
+        state.setActive(playerEntity);
     }
 
     for (int i = 0; i < 50; ++i) {
@@ -158,7 +158,7 @@ int main()
         //}
 
         //state.setActive(e, true);
-        state.activate(e);
+        state.setActive(e);
     }
 
 
@@ -188,7 +188,7 @@ int main()
             }
         });
 */
-
+/*
         for ( auto& ref : state.iterate<Body>() ) {
             //std::cout << ref.hash.signature() << ", " << ref.hash.index() << std::endl;
             Entity entity = state.entityFromHash(ref.hash);
@@ -233,9 +233,10 @@ int main()
             //}
 
             //state.setActive(e, true);
-            state.activate(e);
-        }
+            //state.activate(e);
 
+        }
+*/
 
 
         // convert the sfml vector to our math vector
