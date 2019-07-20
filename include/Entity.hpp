@@ -248,6 +248,41 @@ public:
 };
 */
 
+
+
+/*
+    extend
+    reserve
+
+    create
+    valid
+    signature
+
+    entityFromIndex
+    hashFromIndex
+    entityFromHash
+    hashFromEntity
+
+    change
+    add
+    remove
+
+    isActive
+    setActive
+    setInactive
+
+    removeAll
+    destroy
+
+    forEach (static & dynamic)
+    reference
+
+    container
+    any         (dynamic version of container)
+*/
+
+
+
 template<typename T>    struct needs_move                  { static const bool value = false; };
 template<typename T>    struct needs_move<VectorMap<T>>    { static const bool value = true;  };
 
@@ -298,7 +333,6 @@ public:
     using component_type = typename container_type<N>::value_type;
 
 
-
     using all_sequence = TSequence::Range0<pack_size - 6>;
     constexpr static uint32_t activeComp = pack_size - 7;
     constexpr static uint32_t hashComp = pack_size - 6;
@@ -316,27 +350,24 @@ public:
         return f & (0x01 << activeCompFlagIndex);
     }
 
-
     template<uint32_t... Ns>
-    using ref_type = std::tuple<Ref<component_type<Ns>>...>;
-
-    template<uint32_t... Ns>
-    using iter_type = std::tuple<typename std::vector<component_type<Ns>>::iterator...>;
-
-    template<uint32_t... Ns>
-    struct Reference {
-        uint16_t index;
-        Entity entity;
-        VMHash hash;
-        ref_type<Ns...> pack;
-    };
+    using refs_type = std::tuple<Ref<component_type<Ns>>...>;
 
     template<typename T>
-    struct SingleReference {
+    struct Reference;
+
+    template<uint32_t... Ns>
+    struct Reference<TSequence::Make<Ns...>> {
         uint16_t index;
         Entity entity;
         VMHash hash;
-        Ref<T> ref;
+        refs_type<Ns...> pack;
+    };
+
+    template<uint32_t N>
+    struct SReference {
+        uint16_t index;
+        Ref<component_type<N>> value;
     };
 
 
@@ -486,7 +517,7 @@ public:
     }
 
     template<uint32_t... Ns>
-    void changeSignature(Entity entity) {
+    void change(Entity entity) {
         auto& freeData = std::get<State::freeHashComp>(data);
         auto& hashData = std::get<State::hashComp>(data);
         auto& dynamicData = std::get<State::dynamicComp>(data);
@@ -620,7 +651,7 @@ public:
     void destroy(Entity entity) {
         // need to remove all dynamic comps here!
         removeAll<dynamic_comp_sequence>::invoke(this, entity);
-        changeSignature(entity);
+        change(entity);
         auto& freeData = std::get<State::freeEntityComp>(data).get();
         auto& generationData = std::get<State::generationComp>(data);
         auto& hashData = std::get<State::hashComp>(data);
@@ -655,23 +686,90 @@ public:
         }
     }
 
-    template<uint32_t... Ns, typename F>
-    void forEach(F func) {
-        auto& dynamicData = std::get<State::dynamicComp>(data);
-        VMHash hash;
-        uint16_t signature = 0x0000;
-        CPP17_FOLD( signature |= (0x0001 << vector_map_sequence::find(Ns)) );
-        for (auto& kv : dynamicData) {
-            hash.signature = kv.first;
-            if ( (hash.signature & signature) == signature ) {
-                for (hash.index = 0; hash.index < kv.second.size(); ++hash.index) {
-                    if ( is_active(dynamicData[hash]) == true ) {
-                        func(hash);
+    template<typename S, typename R>
+    struct ReferenceImpl;
+
+    template<typename S, uint32_t... Ns>
+    struct ReferenceImpl<S, TSequence::Make<Ns...>> {
+        static void invoke(State& state, Reference<S>& t) {
+            CPP17_FOLD( std::get<Ns>(t.pack) = state.container<S::value[Ns]>().find(t.entity, t.hash) );
+        }
+    };
+
+    template<typename S>
+    Reference<S> reference(Entity entity);
+
+    template<uint32_t... Ns>
+    Reference<TSequence::Make<Ns...>> reference(Entity entity) {
+        Reference<TSequence::Make<Ns...>> ref;
+        ref.index = entity.index();
+        ref.entity = entity;
+        auto& hashData = std::get<State::hashComp>(data);
+        ref.hash = hashData[entity.index()];
+        ReferenceImpl<TSequence::Make<Ns...>, TSequence::Range0<TSequence::Make<Ns...>::size>>::invoke(*this, ref);
+        return ref;
+    }
+
+
+    template<typename S>
+    struct Iterators;
+
+    template<uint32_t... Ns>
+    struct Iterators<TSequence::Make<Ns...>> {
+        std::tuple<typename std::vector<component_type<Ns>>::iterator...> pack;
+    };
+
+    template<typename S, typename F, typename R>
+    struct forEachImpl;
+
+    template<typename S, typename F, uint32_t... Ns>
+    struct forEachImpl<S, F, TSequence::Make<Ns...>> {
+        static void invoke(State& state, F func) {
+            auto& dynamicData = std::get<State::dynamicComp>(state.data);
+            Entity nullEntity;
+            Reference<S> ref;
+            Iterators<S> its;
+            VMHash hash;
+            uint16_t signature = 0x0000;
+            CPP17_FOLD( signature |= (0x0001 << vector_map_sequence::find(S::value[Ns])) );
+            for (auto& kv : dynamicData) {
+                hash.signature = kv.first;
+                if ( (hash.signature & signature) == signature ) {
+                    CPP17_FOLD( std::get<Ns>(its.pack) = std::get<S::value[Ns]>(state.data).begin(hash.signature) );
+                    for (hash.index = 0; hash.index < kv.second.size(); ++hash.index) {
+                        if ( is_active(dynamicData[hash]) == true ) {
+                            ref.index = 0;
+                            ref.hash = hash;
+                            ref.entity = nullEntity;
+                            CPP17_FOLD( std::get<Ns>(ref.pack) = Ref<component_type<S::value[Ns]>>( &(*(std::get<Ns>(its.pack))) ) );
+                            func(ref);
+                            CPP17_FOLD( ++(std::get<Ns>(its.pack)) );
+                        }
                     }
                 }
             }
         }
+    };
+
+    template<typename S, typename F>
+    void forEach(F func) {
+        forEachImpl<S, F, TSequence::Range0<S::size>>::invoke(*this, func);
     }
+
+    template<uint32_t N, typename F>
+    void forEach(F func) {
+        SReference<N> ref;
+        auto& componentData = std::get<N>(data);
+        auto it = componentData.begin();
+        while ( it != componentData.end() ) {
+            ref.index = it->first;
+            ref.value = Ref<component_type<N>>( &(it->second) );
+            func(ref);
+            ++it;
+        }
+    }
+
+
 
     /*
         IComponent classes are for interfacing with the component data from the outside
@@ -712,60 +810,6 @@ public:
     public:
         IComponent(State* s) : state(*s) { }
 
-        /*
-            Used to make syntax for loop for dynamic components cleaner
-        */
-        class Iterator {
-        private:
-            using iter_type = typename container_type<COMP>::table_type::iterator;
-            State* state;
-            iter_type it;
-            SingleReference<component_type<COMP>> ref;
-
-            friend class IComponent;
-
-        public:
-            Iterator(State& s) : state(&s) { }
-
-            bool operator==(const Iterator& rhs) const {
-                return it == rhs.it;
-            }
-
-            bool operator!=(const Iterator& rhs) const {
-                return it != rhs.it;
-            }
-
-            SingleReference<component_type<COMP>>& operator*() {
-                ref.index = it->first;
-                Entity::Tracked tracked;
-                tracked.untracked = 0;
-                tracked.generation = 0;
-                tracked.index = ref.index;
-                ref.entity = Entity(tracked);
-                ref.hash = (std::get<State::hashComp>(state->data))[ref.index];
-                ref.ref = Ref<component_type<COMP>>( &(it->second) );
-                return ref;
-            }
-
-            Iterator& operator++() {
-               ++it;
-            }
-        };
-
-        Iterator begin() {
-            auto& componentData = std::get<COMP>(state.data);
-            Iterator it(state);
-            it.it = componentData.begin();
-            return it;
-        }
-
-        Iterator end() {
-            auto& componentData = std::get<COMP>(state.data);
-            Iterator it(state);
-            it.it = componentData.end();
-            return it;
-        }
-
         Ref<T> find(Entity entity) {
             auto& componentData = std::get<COMP>(state.data);
             return componentData.find( entity.index() );
@@ -783,19 +827,21 @@ public:
 
 
     template<uint32_t N>
-    auto find(Entity entity) -> decltype(IComponent<container_type<N>, N>(this).find(entity)) {
-        return IComponent<container_type<N>, N>(this).find(entity);
-    }
-
-    template<uint32_t N>
-    auto find(VMHash hash) -> decltype(IComponent<container_type<N>, N>(this).find(hash)) {
-        return IComponent<container_type<N>, N>(this).find(hash);
-    }
-
-    template<uint32_t N>
     auto container() -> decltype(IComponent<container_type<N>, N>(this)) {
         return IComponent<container_type<N>, N>(this);
     }
+
+    template<uint32_t N>
+    auto find(Entity entity) -> decltype(container<N>().find(entity)) {
+        return container<N>().find(entity);
+    }
+
+    template<uint32_t N>
+    auto find(VMHash hash) -> decltype(container<N>().find(hash)) {
+        return container<N>().find(hash);
+    }
+
+
 
 
     /*
@@ -816,153 +862,8 @@ public:
     /*
         this function gets a reference to an entity components
     */
-    template<typename T, typename S, typename R>
-    struct ReferenceImpl;
-
-    template<typename T, typename S, uint32_t... Ns>
-    struct ReferenceImpl<T, S, TSequence::Make<Ns...>> {
-        static void invoke(State& state, T& t) {
-            CPP17_FOLD( std::get<Ns>(t.pack) = state.container<S::value[Ns]>().find(t.entity, t.hash) );
-        }
-    };
-
-    template<uint32_t... Ns>
-    Reference<Ns...> reference(Entity entity) {
-        Reference<Ns...> ref;
-        ref.entity = entity;
-        auto& hashData = std::get<State::hashComp>(data);
-        ref.hash = hashData[entity.index()];
-        ReferenceImpl<Reference<Ns...>, TSequence::Make<Ns...>, TSequence::Range0<sizeof...(Ns)>>::invoke(*this, ref);
-        return ref;
-    }
 
 
-    /*
-        This 'container proxy' is used to iterate though signatures of components with the C++11 'for' structure.
-    */
-    template<typename T, typename P, typename S, typename R>
-    class ContainerProxyImpl;
-
-    template<typename T, typename P, typename S, uint32_t... Ns>
-    class ContainerProxyImpl<T, P, S, TSequence::Make<Ns...>> {
-    public:
-        ContainerProxyImpl(State* s, uint16_t g) : state(s), signature(g) { }
-
-        class Iterator {
-        public:
-            Iterator(State* s, uint16_t g) : state(s), signature(g) { }
-
-            bool operator==(const Iterator& rhs) const {
-                return table == rhs.table;
-            }
-
-            bool operator!=(const Iterator& rhs) const {
-                return table != rhs.table;
-            }
-
-            T& operator*() {
-                CPP17_FOLD( std::get<Ns>(references.pack) = Ref<component_type<S::value[Ns]>>( &(*(std::get<Ns>(pack))) ) );
-                references.hash = VMHash(hash.signature, hash.index);
-                references.entity = Entity();
-                references.index = 0xffff;
-                return references;
-            }
-
-            Iterator& operator++() {
-                for (;;) {
-                    ++hash.index;
-                    ++dynamic;
-                    CPP17_FOLD( ++(std::get<Ns>(pack)) );
-                    if (dynamic == dynamic_end) {
-                        for (;;) {
-                            ++table;
-                            if (table == table_end) {
-                                return *this;
-                            }
-                            if ( (table->first & signature) == signature ) {
-                                hash.signature = table->first;
-                                hash.index = 0;
-                                dynamic = table->second.begin();
-                                dynamic_end = table->second.end();
-                                CPP17_FOLD( std::get<Ns>(pack) = std::get<S::value[Ns]>(state->data).begin(table->first) );
-                                break;
-                            }
-                        }
-                    }
-                    if (is_active(*dynamic) == true) {
-                        return *this;
-                    }
-                }
-            }
-
-        private:
-            friend class ContainerProxyImpl;
-
-            using table_iterator = typename container_type<dynamicComp>::table_type::iterator;
-            using vector_iterator = typename std::vector<component_type<dynamicComp>>::iterator;
-
-            State* state;
-            uint16_t signature;
-
-            table_iterator table;
-            table_iterator table_end;
-            vector_iterator dynamic;
-            vector_iterator dynamic_end;
-
-            P pack;
-            T references;
-
-            Entity::Tracked entity;
-            VMHash hash;
-        };
-
-        Iterator begin() {
-            auto& dynamicData = std::get<dynamicComp>(state->data);
-            Iterator it(state, signature);
-            it.table_end = dynamicData.end();
-            it.table = dynamicData.begin();
-            while ( it.table != it.table_end && (it.table->first & signature) != signature ) {
-                ++it.table;
-            }
-            if ( it.table != it.table_end ) {
-                it.hash.index = 0;
-                it.hash.signature = it.table->first;
-                it.dynamic = it.table->second.begin();
-                it.dynamic_end = it.table->second.end();
-                CPP17_FOLD( std::get<Ns>(it.pack) = std::get<S::value[Ns]>(state->data).begin(it.table->first) );
-                if ( it.dynamic != it.dynamic_end && is_active( *(it.dynamic) ) == false ) {
-                    ++it;
-                }
-            }
-            return it;
-        }
-
-        Iterator end() {
-            auto& dynamicData = std::get<dynamicComp>(state->data);
-            Iterator it(state, signature);
-            it.table_end = dynamicData.end();
-            it.table = it.table_end;
-            return it;
-        }
-
-    private:
-        State* state;
-        uint16_t signature;
-    };
-
-    template<typename T, typename P, typename S, typename R>
-    friend class ContainerProxyImpl;
-
-    template<uint32_t... Ns>
-    using ContainerProxy = ContainerProxyImpl<Reference<Ns...>, iter_type<Ns...>, TSequence::Make<Ns...>, TSequence::Range0<sizeof...(Ns)>>;
-
-    template<uint32_t... Ns>
-    ContainerProxy<Ns...> iterate() {
-        // make signature here
-        uint16_t signature = 0x0000;
-        CPP17_FOLD( signature |= (0x0001 << vector_map_sequence::find(Ns)) );
-        return ContainerProxy<Ns...>(this, signature);
-    }
 
 };
 
