@@ -114,6 +114,7 @@ template<uint32_t H, uint32_t... Ns>
 constexpr uint32_t TSequence::MakeHelper<H, Ns...>::value[];
 
 
+
 struct Hash {
 public:
     Hash() { data.raw.value = 0x00000000; }
@@ -134,10 +135,6 @@ public:
         return data.raw.value;
     }
 
-    Hash(uint32_t in) { data.raw.value = in; }
-    Hash(uint16_t s, uint16_t i) { data.si.signature = s; data.si.index = i; }
-
-
 private:
     template<typename... Ts>
     friend class State;
@@ -152,6 +149,8 @@ private:
     };
 
     Hash(SignatureIndex in) { data.si = in; }
+    Hash(uint32_t in) { data.raw.value = in; }
+    Hash(uint16_t s, uint16_t i) { data.si.signature = s; data.si.index = i; }
 
     union {
         SignatureIndex si;
@@ -342,11 +341,7 @@ public:
     template<uint32_t N>
     using component_type = typename container_type<N>::value_type;
 
-    /*template<uint32_t... Ns>
-    using ref_type = std::tuple<Ref<component_type<Ns>>...>;
 
-    template<uint32_t... Ns>
-    using iter_type = std::tuple<typename std::vector<component_type<Ns>>::iterator...>;*/
 
     using all_sequence = TSequence::Range0<pack_size - 6>;
     constexpr static uint32_t activeComp = pack_size - 7;
@@ -365,14 +360,22 @@ public:
         return f & (0x01 << activeCompFlagIndex);
     }
 
-/*
+
+    template<uint32_t... Ns>
+    using ref_type = std::tuple<Ref<component_type<Ns>>...>;
+
+    template<uint32_t... Ns>
+    using iter_type = std::tuple<typename std::vector<component_type<Ns>>::iterator...>;
+
     template<uint32_t... Ns>
     struct Reference {
+        uint16_t index;
         Entity entity;
         Hash hash;
         ref_type<Ns...> pack;
     };
-*/
+
+
 
     data_type data;
 
@@ -749,6 +752,8 @@ public:
     public:
         IComponent(State* s) : state(*s) { }
 
+        // @TODO: put new kind of iterator here!
+
         typename container_type<COMP>::table_type::iterator begin() {
             auto& componentData = std::get<COMP>(state.data);
             return componentData.begin();
@@ -807,38 +812,39 @@ public:
 */
 
     /*
+        this function gets a reference to an entity components
+    */
     template<typename T, typename S, typename R>
-    struct reference_helper;
+    struct ReferenceImpl;
 
     template<typename T, typename S, uint32_t... Ns>
-    struct reference_helper<T, S, TSequence::Make<Ns...>> {
-        static void invoke(State& state, T& t, Entity entity, Hash hash) {
-            CPP17_FOLD( std::get<Ns>(t) = state.container<S::value[Ns]>().find(entity, hash) );
+    struct ReferenceImpl<T, S, TSequence::Make<Ns...>> {
+        static void invoke(State& state, T& t) {
+            CPP17_FOLD( std::get<Ns>(t.pack) = state.container<S::value[Ns]>().find(t.entity, t.hash) );
         }
     };
 
     template<uint32_t... Ns>
-    ref_type<Ns...> reference(Entity entity) {
+    Reference<Ns...> reference(Entity entity) {
+        Reference<Ns...> ref;
+        ref.entity = entity;
         auto& hashData = std::get<State::hashComp>(data);
-        Hash hash = hashData[entity.index()];
-        ref_type<Ns...> ref;
-        reference_helper<ref_type<Ns...>, TSequence::Make<Ns...>, TSequence::Range0<sizeof...(Ns)>>::invoke(*this, ref, entity, hash);
+        ref.hash = hashData[entity.index()];
+        ReferenceImpl<Reference<Ns...>, TSequence::Make<Ns...>, TSequence::Range0<sizeof...(Ns)>>::invoke(*this, ref);
         return ref;
     }
-    */
 
 
     /*
-        This 'container proxy' is used to iterate though signatures of components
+        This 'container proxy' is used to iterate though signatures of components with the C++11 'for' structure.
     */
-    /*
     template<typename T, typename P, typename S, typename R>
-    class ContainerProxy;
+    class ContainerProxyImpl;
 
     template<typename T, typename P, typename S, uint32_t... Ns>
-    class ContainerProxy<T, P, S, TSequence::Make<Ns...>> {
+    class ContainerProxyImpl<T, P, S, TSequence::Make<Ns...>> {
     public:
-        ContainerProxy(State* s, uint16_t g) : state(s), signature(g) { }
+        ContainerProxyImpl(State* s, uint16_t g) : state(s), signature(g) { }
 
         class Iterator {
         public:
@@ -855,7 +861,8 @@ public:
             T& operator*() {
                 CPP17_FOLD( std::get<Ns>(references.pack) = Ref<component_type<S::value[Ns]>>( &(*(std::get<Ns>(pack))) ) );
                 references.hash = Hash(hash.signature, hash.index);
-                //references.entity = ?;
+                references.entity = Entity();
+                references.index = 0xffff;
                 return references;
             }
 
@@ -871,7 +878,7 @@ public:
                                 return *this;
                             }
                             if ( (table->first & signature) == signature ) {
-                                hash.signature = signature;
+                                hash.signature = table->first;
                                 hash.index = 0;
                                 dynamic = table->second.begin();
                                 dynamic_end = table->second.end();
@@ -887,7 +894,7 @@ public:
             }
 
         private:
-            friend class ContainerProxy;
+            friend class ContainerProxyImpl;
 
             using table_iterator = typename container_type<dynamicComp>::table_type::iterator;
             using vector_iterator = typename std::vector<component_type<dynamicComp>>::iterator;
@@ -942,19 +949,19 @@ public:
     };
 
     template<typename T, typename P, typename S, typename R>
-    friend class ContainerProxy;
+    friend class ContainerProxyImpl;
 
     template<uint32_t... Ns>
-    using ContainerProxyHelp = ContainerProxy<Reference<Ns...>, iter_type<Ns...>, TSequence::Make<Ns...>, TSequence::Range0<sizeof...(Ns)>>;
+    using ContainerProxy = ContainerProxyImpl<Reference<Ns...>, iter_type<Ns...>, TSequence::Make<Ns...>, TSequence::Range0<sizeof...(Ns)>>;
 
     template<uint32_t... Ns>
-    ContainerProxyHelp<Ns...> iterate() {
+    ContainerProxy<Ns...> iterate() {
         // make signature here
         uint16_t signature = 0x0000;
         CPP17_FOLD( signature |= (0x0001 << vector_map_sequence::find(Ns)) );
-        return ContainerProxyHelp<Ns...>(this, signature);
+        return ContainerProxy<Ns...>(this, signature);
     }
-    */
+
 };
 
 template<typename... Ts>

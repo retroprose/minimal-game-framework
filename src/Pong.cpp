@@ -122,10 +122,13 @@ int main()
     auto playerEntity = state.create();
 
     {
+        state.add<Controller>(playerEntity);
+
         state.changeSignature<Body, Color>(playerEntity);
 
         ref.body = state.find<Body>(playerEntity);
         ref.color = state.find<Color>(playerEntity);
+        ref.controller = state.find<Controller>(playerEntity);
 
         // notice that references use -> instead of . to access members
         ref.body->position = Vector2(400, 300);    // set to center of screen
@@ -148,10 +151,12 @@ int main()
         }
 
         {
-            ref.body = state.find<Body>(e);
-            ref.color = state.find<Color>(e);
+            //ref.body = state.find<Body>(e);
+            //ref.color = state.find<Color>(e);
 
-            ref.hatColor = state.find<HatColor>(e);
+            //ref.hatColor = state.find<HatColor>(e);
+
+            std::tie(ref.body, ref.color, ref.hatColor) = state.reference<Body, Color, HatColor>(e).pack;
 
             ref.body->position = Vector2(rand()%800, rand()%600);
             ref.body->velocity = Vector2(rand()%5, rand()%5);
@@ -243,11 +248,11 @@ int main()
         move.Normalize();
 
 
-/*
+
         // check to make sure playerEntity is still valid
         if (state.valid(playerEntity) == true) {
 
-            ref.controller = state.controller(playerEntity);
+            ref.controller = state.find<Controller>(playerEntity);
 
             // check to make sure the entity does in fact have that component
             if (!ref.controller.isNull()) {
@@ -256,19 +261,27 @@ int main()
                 ref.controller->cursor = cursorPos;
                 ref.controller->move = move;
 
-
                 if (sf::Mouse::isButtonPressed(sf::Mouse::Button::Left)) {
-                    state.addSignature( playerEntity, {State::HatColor} );
+                    state.add<HatColor>(playerEntity);
                     // notice how we need to re-get the reference after updating the entity
-                    ref.hatColor = state.hatColor(playerEntity);
-                    *ref.hatColor = Color(0, 0, 0);
+                    ref.hatColor = state.find<HatColor>(playerEntity);
+                    *ref.hatColor = Cp::Color(0, 0, 0);
                 } else if (sf::Mouse::isButtonPressed(sf::Mouse::Button::Right)) {
-                    state.removeSignature( playerEntity, {State::HatColor} );
+                    state.remove<HatColor>(playerEntity);
                 }
             }
         }
 
 
+        for (auto& kv : state.container<Controller>()) {
+            Hash hash = state.hashFromIndex(kv.first);
+            Entity entity = state.entityFromIndex(kv.first);
+            ref.controller = state.find<Controller>(entity);
+            ref.body = state.find<Body>(hash);
+            ref.body->velocity = ref.controller->move;
+        }
+
+/*
         for (auto& kv : state.controller()) {
             ref.hash = state.getHashFromIndex(kv.first);
             ref.controller = &kv.second;
@@ -319,19 +332,22 @@ int main()
 */
         // This will draw all of the entities.
 
-        state.forEach<Body, Color>([&](Hash hash) {
-            ref.body = state.find<Body>(hash);
-            ref.color = state.find<Color>(hash);
+        //state.forEach<Body, Color>([&](Hash hash) {
+        //    ref.body = state.find<Body>(hash);
+        //    ref.color = state.find<Color>(hash);
+
+        for ( auto&& i : state.iterate<Body, Color>() ) {
+            std::tie(ref.body, ref.color) = i.pack;
 
             circle.setFillColor(sf::Color(ref.color->r*255, ref.color->g*255, ref.color->b*255));
             circle.setPosition(ref.body->position.x, ref.body->position.y);
             circle.setRadius(ref.body->radius);
             circle.setOrigin(ref.body->radius / 2.0f, ref.body->radius / 2.0f);
             window.draw(circle);
-        });
+        //});
+        }
 
-
-        for (auto& kv : state.container<HatColor>()) {
+        for (auto&& kv : state.container<HatColor>()) {
             Hash hash = state.hashFromIndex(kv.first);
             Entity entity = state.entityFromIndex(kv.first);
             ref.hatColor = state.find<HatColor>(entity);

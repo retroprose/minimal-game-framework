@@ -33,7 +33,6 @@ public:
     }
 
     T* operator -> () {
-        bool b = (!isNull());
         ASSERT( !isNull() );
         return ptr_;
     }
