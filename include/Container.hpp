@@ -1,49 +1,58 @@
 #ifndef CONTAINER_HPP
 #define CONTAINER_HPP
 
+#include <cassert>
 #include <vector>
 #include <map>
 #include <algorithm>
 
-#include <Error.hpp>
+/*
+    This file contains containers implemented with the standard library.
+    These could be reimplemented from scratch if you want to avoid the
+    standard library all together.
+*/
 
+/*
+    This class simply encapsulates a pointer.  It will assert if
+    the pointer is dereferenced and that pointer is nullptr
+*/
 template<typename T>
 class Ref {
 public:
     Ref(T* ptr = nullptr) : ptr_(ptr) { }
 
     T& get() {
-        ASSERT( !isNull() );
+        assert( !isNull() );
         return *ptr_;
     }
 
     const T& get() const {
-        ASSERT( !isNull() );
+        assert( !isNull() );
         return *ptr_;
     }
 
     void set(const T& t) {
-        ASSERT( !isNull() );
+        assert( !isNull() );
         *ptr_ = t;
     }
 
     T& operator *() {
-        ASSERT( !isNull() );
+        assert( !isNull() );
         return *ptr_;
     }
 
     T* operator -> () {
-        ASSERT( !isNull() );
+        assert( !isNull() );
         return ptr_;
     }
 
     const T& operator *() const {
-        ASSERT( !isNull() );
+        assert( !isNull() );
         return *ptr_;
     }
 
     const T* operator -> () const {
-        ASSERT( !isNull() );
+        assert( !isNull() );
         return ptr_;
     }
 
@@ -51,26 +60,15 @@ public:
         return ptr_ == nullptr;
     }
 
-    // overloaded prefix ++ operator
-    // Define prefix decrement operator.
-    Ref& operator++() {
-       ++ptr_;
-       return *this;
-    }
-
-    uint8_t* bytePtr() { return reinterpret_cast<uint8_t*>(ptr_); }
-
 private:
     T* ptr_; // pointer
 
 };
 
-template<typename T>
-Ref<T> makeRef(T& t) {
-    return Ref<T>(&t);
-}
 
-
+/*
+    A container that contains a single value of type T
+*/
 template<typename T>
 class Single {
 private:
@@ -89,7 +87,10 @@ public:
 
 };
 
-
+/*
+    This container is simply a wrapper around a vector,
+    all objects are stored sequentially in memory.
+*/
 template<typename T>
 class Vector {
 private:
@@ -104,27 +105,24 @@ public:
     }
 
     const T& operator[](uint16_t index) const {
+        assert(index >= 0 && index < table.size());
         return table[index];
     }
 
     T& operator[](uint16_t index) {
+        assert(index >= 0 && index < table.size());
         return table[index];
     }
 
     Ref<T> find(uint16_t index) {
-        return Ref<T>( &(table[index]) );
-    }
-
-    typename table_type::const_iterator begin() const {
-        return table.begin();
-    }
-
-    typename table_type::const_iterator end() const {
-        return table.end();
+        Ref<T> ref;
+        if (index >= 0 && index < table.size())
+            ref = Ref<T>( &(table[index]) );
+        return ref;
     }
 
     void sort() {
-        std::sort(table.begin(), table,end());
+        std::sort(table.begin(), table.end());
     }
 
     void extend(uint16_t index) {
@@ -134,105 +132,19 @@ public:
     }
 
     void erase(uint16_t index) {
+        assert(index >= 0 && index < table.size());
         std::swap(table[index], table[table.size() - 1]);
         table.pop_back();
     }
 
 };
 
-
-
-template<typename T>
-class VectorMap {
-public:
-     using table_type = std::map<uint32_t, std::vector<T>>;
-     using vector_iterator = typename std::vector<T>::iterator;
-
-private:
-    using pair_type = std::pair<uint32_t, std::vector<T>>;
-    table_type table;
-
-public:
-    using value_type = T;
-
-    static uint16_t getVector(uint32_t h) {
-        return (h & 0xffff0000) >> 16;
-    }
-
-    static uint16_t getIndex(uint32_t h) {
-        return (h & 0x0000ffff);
-    }
-
-    size_t size(uint32_t hash) const {
-        size_t s = 0;
-        typename table_type::const_iterator it = table.find(getVector(hash));
-        if (it != table.end()) {
-            s = it->second.size();
-        }
-        return s;
-    }
-
-    bool hasHash(uint32_t hash) const {
-        bool has = true;
-        typename table_type::const_iterator it = table.find(getVector(hash));
-        if (it == table.end() || getIndex(hash) >= it->second.size())
-            has = false;
-        return has;
-    }
-
-    T& operator[](uint32_t hash) {
-        typename table_type::iterator it = table.find(getVector(hash));
-        ASSERT(it != table.end() && getIndex(hash) < it->second.size());
-        return it->second[getIndex(hash)];
-    }
-
-    Ref<T> find(uint32_t hash) {
-        Ref<T> ref;
-        typename table_type::iterator it = table.find(getVector(hash));
-        if (it != table.end() && getIndex(hash) < it->second.size()) {
-            ref = Ref<T>( &(it->second[getIndex(hash)]) );
-        }
-        return ref;
-    }
-
-    typename table_type::iterator begin() {
-        return table.begin();
-    }
-
-    typename table_type::iterator end() {
-        return table.end();
-    }
-
-    vector_iterator begin(uint16_t signature) {
-        return table[signature].begin();
-    }
-
-    vector_iterator end(uint16_t signature) {
-        return table[signature].begin();
-    }
-
-    void move(uint32_t oldHash, uint32_t newHash) {
-        typename table_type::iterator newSig = table.find(getVector(newHash));
-        if (newSig == table.end()) {
-            if (getVector(newHash) == 0) return;
-            auto ret = table.insert(pair_type(getVector(newHash), std::vector<T>()));
-            newSig = ret.first; // BUG?!
-        }
-
-        if (newSig->second.size() <= getIndex(newHash)) {
-            newSig->second.resize(getIndex(newHash) + 1);
-        }
-
-        typename table_type::iterator oldSig = table.find(getVector(oldHash));
-
-        if (oldSig != table.end()) {
-            std::swap(oldSig->second[getIndex(oldHash)], newSig->second[getIndex(newHash)]);
-        }
-    }
-
-};
-
-
+/*
+    This is a wrapper around some kind of hash table,
+    right now its implemented with a map, but
+    would probably be best if it was a robin hood
+    hashing hash table.
+*/
 template<typename T>
 class HashMap {
 public:
@@ -255,7 +167,7 @@ public:
 
     T& operator[](uint16_t index) {
         auto it = table.find(index);
-        ASSERT(it != table.end());
+        assert(it != table.end());
         return *it;
     }
 
@@ -291,12 +203,119 @@ public:
 
 };
 
-
+/*
+    This may be used to create component id's to components that
+    are zero size.  It is used internally with the 'Active'
+    component that signifies that the entity is active or not.
+*/
 class EmptyHashMap {
 public:
     void insert(uint16_t index) { }
     void erase(uint16_t index) { }
 };
+
+
+
+/*
+    This is a container that is a combination of the previous containers.
+    It is a series of vectors that are grouped by entity signatures
+    to make memory access more efficient.
+*/
+
+struct VMHash {
+    VMHash() : signature(0), index(0) { }
+    VMHash(uint16_t s, uint16_t i) : signature(s), index(i) { }
+    uint16_t signature;
+    uint16_t index;
+};
+
+template<typename T>
+class VectorMap {
+public:
+    using hash_type = VMHash;
+    using table_type = std::map<uint16_t, std::vector<T>>;
+    using vector_iterator = typename std::vector<T>::iterator;
+
+private:
+    using pair_type = std::pair<uint16_t, std::vector<T>>;
+    table_type table;
+
+public:
+    using value_type = T;
+
+    size_t size(uint16_t signature) const {
+        size_t s = 0;
+        typename table_type::const_iterator it = table.find(signature);
+        if (it != table.end()) {
+            s = it->second.size();
+        }
+        return s;
+    }
+
+    bool hasHash(hash_type hash) const {
+        bool has = true;
+        typename table_type::const_iterator it = table.find(hash.signature);
+        if (it == table.end() || hash.index >= it->second.size())
+            has = false;
+        return has;
+    }
+
+    T& operator[](hash_type hash) {
+        typename table_type::iterator it = table.find(hash.signature);
+        assert(it != table.end() && hash.index < it->second.size());
+        return it->second[hash.index];
+    }
+
+    Ref<T> find(hash_type hash) {
+        Ref<T> ref;
+        typename table_type::iterator it = table.find(hash.signature);
+        if (it != table.end() && hash.index < it->second.size()) {
+            ref = Ref<T>( &(it->second[hash.index]) );
+        }
+        return ref;
+    }
+
+    typename table_type::iterator begin() {
+        return table.begin();
+    }
+
+    typename table_type::iterator end() {
+        return table.end();
+    }
+
+    vector_iterator begin(uint16_t signature) {
+        return table[signature].begin();
+    }
+
+    vector_iterator end(uint16_t signature) {
+        return table[signature].begin();
+    }
+
+    /*
+        This function will move a component from one hash to another as
+        signatures of entities change.
+    */
+    void move(hash_type oldHash, hash_type newHash) {
+        typename table_type::iterator newSig = table.find(newHash.signature);
+        if (newSig == table.end()) {
+            if (newHash.signature == 0) return;
+            auto ret = table.insert(pair_type(newHash.signature, std::vector<T>()));
+            newSig = ret.first; // BUG?!
+        }
+
+        if (newSig->second.size() <= newHash.index) {
+            newSig->second.resize(newHash.index + 1);
+        }
+
+        typename table_type::iterator oldSig = table.find(oldHash.signature);
+
+        if (oldSig != table.end()) {
+            std::swap(oldSig->second[oldHash.index], newSig->second[newHash.index]);
+        }
+    }
+
+};
+
 
 
 

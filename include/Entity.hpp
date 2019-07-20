@@ -7,13 +7,13 @@
 /*
     TSequence
     Entity
-    Hash
     Any
     State
 
     Ref
     Vector
     HashMap
+    VMHash
     VectorMap
     EmptyHashMap
 */
@@ -44,7 +44,7 @@ private:
             uint32_t index = Null;
             index = (H == key) ? H : index;
             CPP17_FOLD( index = (Ns == key) ? Ns : index );
-            ASSERT(index != Null);
+            assert(index != Null);
             return index;
         }
     };
@@ -115,50 +115,6 @@ constexpr uint32_t TSequence::MakeHelper<H, Ns...>::value[];
 
 
 
-struct Hash {
-public:
-    Hash() { data.raw.value = 0x00000000; }
-
-    bool operator< (const Hash& rhs) const { return data.raw.value <  rhs.data.raw.value; }
-    bool operator==(const Hash& rhs) const { return data.raw.value == rhs.data.raw.value; }
-    bool operator!=(const Hash& rhs) const { return data.raw.value != rhs.data.raw.value; }
-
-    uint16_t signature() const {
-        return data.si.signature;
-    }
-
-    uint16_t index() const {
-        return data.si.index;
-    }
-
-    uint32_t raw() const {
-        return data.raw.value;
-    }
-
-private:
-    template<typename... Ts>
-    friend class State;
-
-    struct SignatureIndex {
-        uint16_t index;
-        uint16_t signature;
-    };
-
-    struct Raw {
-        uint32_t value;
-    };
-
-    Hash(SignatureIndex in) { data.si = in; }
-    Hash(uint32_t in) { data.raw.value = in; }
-    Hash(uint16_t s, uint16_t i) { data.si.signature = s; data.si.index = i; }
-
-    union {
-        SignatureIndex si;
-        Raw raw;
-    } data;
-
-};
-
 
 class Entity {
 public:
@@ -173,22 +129,22 @@ public:
     }
 
     uint16_t index() const {
-        ASSERT(data.tracked.untracked == 0);
+        assert(data.tracked.untracked == 0);
         return data.tracked.index;
     }
 
     uint16_t generation() const {
-        ASSERT(data.tracked.untracked == 0);
+        assert(data.tracked.untracked == 0);
         return data.tracked.generation;
     }
 
     uint16_t type() const {
-        ASSERT(data.tracked.untracked == 1);
+        assert(data.tracked.untracked == 1);
         return data.untracked.type;
     }
 
     uint16_t user() const {
-        ASSERT(data.tracked.untracked == 1);
+        assert(data.tracked.untracked == 1);
         return data.untracked.user;
     }
 
@@ -277,14 +233,14 @@ private:
 
 public:
     Any() {
-        ASSERT(false);
+        assert(false);
     }
 
     template<typename T>
     Any(T& t) {
-        ASSERT(sizeof(Derived<T>) <= MaxBuffer);
+        assert(sizeof(Derived<T>) <= MaxBuffer);
         Base* d = new (buffer_) Derived<T>(t);
-        ASSERT(d - base() == 0);
+        assert(d - base() == 0);
     }
 
     Base* operator->() { return reinterpret_cast<Base*>(buffer_); }
@@ -326,7 +282,7 @@ public:
     using data_type = std::tuple<
         Ts...,                  // user defined components
         EmptyHashMap,           // active component -7
-        Vector<Hash>,           // hashes -6
+        Vector<VMHash>,         // hashes -6
         Vector<GenerationInfo>, // generation id -5
         VectorMap<uint8_t>,     // dynamic comps -4
         VectorMap<uint16_t>,    // entity -3
@@ -371,10 +327,17 @@ public:
     struct Reference {
         uint16_t index;
         Entity entity;
-        Hash hash;
+        VMHash hash;
         ref_type<Ns...> pack;
     };
 
+    template<typename T>
+    struct SingleReference {
+        uint16_t index;
+        Entity entity;
+        VMHash hash;
+        Ref<T> ref;
+    };
 
 
     data_type data;
@@ -434,11 +397,11 @@ public:
             generationData.extend(entity.index);
             hashData.extend(entity.index);
             generationData[entity.index] = GenerationInfo(1);
-            hashData[entity.index] = Hash();
+            hashData[entity.index] = VMHash();
         } else {
             entity.index = freeData.head;
-            freeData.head = hashData[entity.index].index();
-            hashData[entity.index] = Hash();
+            freeData.head = hashData[entity.index].index;
+            hashData[entity.index] = VMHash();
             if (freeData.head == EndOfList)
                 freeData.tail = EndOfList;
         }
@@ -448,7 +411,11 @@ public:
     }
 
     bool valid(Entity entity) const {
-        if ( entity.untracked() == 1 || std::get<State::generationComp>(data)[entity.index()].generation == entity.generation() ) {
+        if (
+            entity.untracked() == 1 ||
+            entity.generation() == 0 ||
+            std::get<State::generationComp>(data)[entity.index()].generation == entity.generation()
+        ) {
             return true;
         }
         return false;
@@ -504,17 +471,17 @@ public:
         return Entity(entity);
     }
 
-    Hash hashFromIndex(uint16_t index) {
+    VMHash hashFromIndex(uint16_t index) {
         auto& hashData = std::get<State::hashComp>(data);
         return hashData[index];
     }
 
-    Entity entityFromHash(Hash hash) {
+    Entity entityFromHash(VMHash hash) {
         auto& entityData = std::get<State::entityComp>(data);
-        return entityFromIndex( entityData[hash.raw()] );
+        return entityFromIndex( entityData[hash] );
     }
 
-    Hash hashFromEntity(Entity entity) {
+    VMHash hashFromEntity(Entity entity) {
         return hashFromIndex(entity.index());
     }
 
@@ -525,63 +492,56 @@ public:
         auto& dynamicData = std::get<State::dynamicComp>(data);
         auto& entityData = std::get<State::entityComp>(data);
 
-        Hash::SignatureIndex nh;
-
-        nh.index = 0;
-        nh.signature = 0x0000;
+        VMHash newHash(0, 0);
 
         // generate signature hash
-        CPP17_FOLD( nh.signature |= (0x0001 << vector_map_sequence::find(Ns)) );
+        CPP17_FOLD( newHash.signature |= (0x0001 << vector_map_sequence::find(Ns)) );
 
-        Hash oldHash = hashData[entity.index()];
+        VMHash oldHash = hashData[entity.index()];
 
-        if (oldHash.signature() == nh.signature) return;
+        if (oldHash.signature == newHash.signature) return;
 
-        auto newInfo = freeData.find(nh.signature);
+        auto newInfo = freeData.find(newHash.signature);
         if ( newInfo.isNull() ) {
-            //nh.index = 0;
-            if (nh.signature != 0) {
-                newInfo = freeData.insert(nh.signature);
+            if (newHash.signature != 0) {
+                newInfo = freeData.insert(newHash.signature);
                 *newInfo = FreeInfo();
             }
         } else {
             if (newInfo->head == EndOfList) {
-                nh.index = newInfo->size;
+                newHash.index = newInfo->size;
                 ++(newInfo->size);
             } else {
-                nh.index = newInfo->head;
-                newInfo->head = entityData[Hash(nh).raw()];
+                newHash.index = newInfo->head;
+                newInfo->head = entityData[newHash];
             }
         }
-        Hash newHash = Hash(nh);
-
 
         uint8_t dynamicSig = 0x00;
-        auto oldInfo = freeData.find(oldHash.signature());
+        auto oldInfo = freeData.find(oldHash.signature);
         if ( !oldInfo.isNull() ) {
-            entityData[oldHash.raw()] = oldInfo->head;
-            oldInfo->head = oldHash.index();
-            dynamicSig = dynamicData[oldHash.raw()];
+            entityData[oldHash] = oldInfo->head;
+            oldInfo->head = oldHash.index;
+            dynamicSig = dynamicData[oldHash];
             dynamicSig &= ~(0x01 << activeCompFlagIndex);
-            dynamicData[oldHash.raw()] = dynamicSig;
+            dynamicData[oldHash] = dynamicSig;
         } else {
-            dynamicSig = (uint8_t)oldHash.index();
+            dynamicSig = (uint8_t)oldHash.index;
             dynamicSig &= ~(0x01 << activeCompFlagIndex);
         }
 
-        entityData.move( oldHash.raw(), newHash.raw() );
-        dynamicData.move( oldHash.raw(), newHash.raw() );
+        entityData.move( oldHash, newHash );
+        dynamicData.move( oldHash, newHash );
 
         // move all components needed to move
-        CPP17_FOLD( std::get<Ns>(data).move(oldHash.raw(), newHash.raw()) );
+        CPP17_FOLD( std::get<Ns>(data).move(oldHash, newHash) );
 
-        if (newHash.signature() != 0) {
-            entityData[newHash.raw()] = entity.index();
-            dynamicData[newHash.raw()] = dynamicSig;
+        if (newHash.signature != 0) {
+            entityData[newHash] = entity.index();
+            dynamicData[newHash] = dynamicSig;
         } else {
             // new hash is null, move dynamic signature to hash index
-            nh.index = (uint16_t)dynamicSig;
-            newHash = Hash(nh);
+            newHash.index = (uint16_t)dynamicSig;
         }
 
         hashData[entity.index()] = newHash;
@@ -595,11 +555,11 @@ public:
         uint16_t signature = 0x0000;
         CPP17_FOLD( signature |= (0x0001 << dynamic_comp_sequence::find(Ns)) );
 
-        if (hash.signature() == 0) {
-            hash = Hash(hash.signature(), hash.index() | signature);
+        if (hash.signature == 0) {
+            hash.index |= signature;
         } else {
             auto& dynamicData = std::get<State::dynamicComp>(data);
-            auto& oldSig = dynamicData[hash.raw()];
+            auto& oldSig = dynamicData[hash];
             oldSig |= signature;
         }
 
@@ -614,11 +574,11 @@ public:
         uint16_t signature = 0x0000;
         CPP17_FOLD( signature |= (0x0001 << dynamic_comp_sequence::find(Ns)) );
 
-        if (hash.signature() == 0) {
-             hash = Hash(hash.signature(), hash.index() & ~signature);
+        if (hash.signature == 0) {
+            hash.index &= ~signature;
         } else {
             auto& dynamicData = std::get<State::dynamicComp>(data);
-            auto& oldSig = dynamicData[hash.raw()];
+            auto& oldSig = dynamicData[hash];
             oldSig &= ~signature;
         }
 
@@ -637,12 +597,12 @@ public:
 
     bool isActive(Entity entity) {
         auto& hashData = std::get<State::hashComp>(data);
-        Hash hash = hashData[entity.index()];
-        uint16_t d = hash.index();
+        VMHash hash = hashData[entity.index()];
+        uint16_t d = hash.index;
 
         if (hash.signature() != 0) {
             auto& dynamicData = std::get<State::dynamicComp>(data);
-            d = dynamicData[hash.raw()];
+            d = dynamicData[hash];
         }
 
         return is_active(d);
@@ -671,7 +631,7 @@ public:
 
             //    If this happens, try using the Extend function
             //    to get more active entities from the start.
-            ASSERT(false);
+            assert(false);
             //generationData[entity.index()].unsafe = 0;
             //generationData[entity.index()].generation = 1;
             //hashData[entity.index()] = Hash(0, EndOfList);
@@ -685,11 +645,11 @@ public:
             // we won't increment if unsafe is set to 1
             generationData[entity.index()].unsafe = 0;
             ++generationData[entity.index()].generation;
-            hashData[entity.index()] = Hash(0, EndOfList);
+            hashData[entity.index()] = VMHash(0, EndOfList);
             if (freeData.head == EndOfList) {
                 freeData.head = entity.index();
             } else {
-                hashData[freeData.tail] = Hash(0, entity.index());
+                hashData[freeData.tail] = VMHash(0, entity.index());
             }
             freeData.tail = entity.index();
         }
@@ -698,15 +658,15 @@ public:
     template<uint32_t... Ns, typename F>
     void forEach(F func) {
         auto& dynamicData = std::get<State::dynamicComp>(data);
-        Hash::SignatureIndex hash;
+        VMHash hash;
         uint16_t signature = 0x0000;
         CPP17_FOLD( signature |= (0x0001 << vector_map_sequence::find(Ns)) );
         for (auto& kv : dynamicData) {
             hash.signature = kv.first;
             if ( (hash.signature & signature) == signature ) {
                 for (hash.index = 0; hash.index < kv.second.size(); ++hash.index) {
-                    if ( is_active(dynamicData[Hash(hash).raw()]) == true ) {
-                        func( Hash(hash) );
+                    if ( is_active(dynamicData[hash]) == true ) {
+                        func(hash);
                     }
                 }
             }
@@ -730,16 +690,16 @@ public:
         Ref<T> find(Entity entity) {
             auto& componentData = std::get<COMP>(state.data);
             auto& hashData = std::get<State::hashComp>(state.data);
-            return componentData.find(hashData[entity.index()].raw());
+            return componentData.find(hashData[entity.index()]);
         }
 
-        Ref<T> find(Hash hash) {
-            return std::get<COMP>(state.data).find(hash.raw());
+        Ref<T> find(VMHash hash) {
+            return std::get<COMP>(state.data).find(hash);
         }
 
-        Ref<T> find(Entity entity, Hash hash) {
+        Ref<T> find(Entity entity, VMHash hash) {
             auto& componentData = std::get<COMP>(state.data);
-            return componentData.find( hash.raw() );
+            return componentData.find(hash);
         }
 
     };
@@ -752,16 +712,58 @@ public:
     public:
         IComponent(State* s) : state(*s) { }
 
-        // @TODO: put new kind of iterator here!
+        /*
+            Used to make syntax for loop for dynamic components cleaner
+        */
+        class Iterator {
+        private:
+            using iter_type = typename container_type<COMP>::table_type::iterator;
+            State* state;
+            iter_type it;
+            SingleReference<component_type<COMP>> ref;
 
-        typename container_type<COMP>::table_type::iterator begin() {
+            friend class IComponent;
+
+        public:
+            Iterator(State& s) : state(&s) { }
+
+            bool operator==(const Iterator& rhs) const {
+                return it == rhs.it;
+            }
+
+            bool operator!=(const Iterator& rhs) const {
+                return it != rhs.it;
+            }
+
+            SingleReference<component_type<COMP>>& operator*() {
+                ref.index = it->first;
+                Entity::Tracked tracked;
+                tracked.untracked = 0;
+                tracked.generation = 0;
+                tracked.index = ref.index;
+                ref.entity = Entity(tracked);
+                ref.hash = (std::get<State::hashComp>(state->data))[ref.index];
+                ref.ref = Ref<component_type<COMP>>( &(it->second) );
+                return ref;
+            }
+
+            Iterator& operator++() {
+               ++it;
+            }
+        };
+
+        Iterator begin() {
             auto& componentData = std::get<COMP>(state.data);
-            return componentData.begin();
+            Iterator it(state);
+            it.it = componentData.begin();
+            return it;
         }
 
-        typename container_type<COMP>::table_type::iterator end() {
+        Iterator end() {
             auto& componentData = std::get<COMP>(state.data);
-            return componentData.end();
+            Iterator it(state);
+            it.it = componentData.end();
+            return it;
         }
 
         Ref<T> find(Entity entity) {
@@ -769,7 +771,7 @@ public:
             return componentData.find( entity.index() );
         }
 
-        Ref<T> find(Entity entity, Hash hash) {
+        Ref<T> find(Entity entity, VMHash hash) {
             auto& componentData = std::get<COMP>(state.data);
             return componentData.find( entity.index() );
         }
@@ -786,7 +788,7 @@ public:
     }
 
     template<uint32_t N>
-    auto find(Hash hash) -> decltype(IComponent<container_type<N>, N>(this).find(hash)) {
+    auto find(VMHash hash) -> decltype(IComponent<container_type<N>, N>(this).find(hash)) {
         return IComponent<container_type<N>, N>(this).find(hash);
     }
 
@@ -860,7 +862,7 @@ public:
 
             T& operator*() {
                 CPP17_FOLD( std::get<Ns>(references.pack) = Ref<component_type<S::value[Ns]>>( &(*(std::get<Ns>(pack))) ) );
-                references.hash = Hash(hash.signature, hash.index);
+                references.hash = VMHash(hash.signature, hash.index);
                 references.entity = Entity();
                 references.index = 0xffff;
                 return references;
@@ -911,7 +913,7 @@ public:
             T references;
 
             Entity::Tracked entity;
-            Hash::SignatureIndex hash;
+            VMHash hash;
         };
 
         Iterator begin() {

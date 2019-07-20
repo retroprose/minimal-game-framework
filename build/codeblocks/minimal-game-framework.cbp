@@ -74,7 +74,6 @@
 		</Linker>
 		<Unit filename="../../include/Container.hpp" />
 		<Unit filename="../../include/Entity.hpp" />
-		<Unit filename="../../include/Error.hpp" />
 		<Unit filename="../../include/Math.hpp" />
 		<Unit filename="../../src/Pong.cpp" />
 		<Extensions>
