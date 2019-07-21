@@ -263,9 +263,9 @@ public:
     entityFromHash
     hashFromEntity
 
-    change
-    add
-    remove
+    change  template
+    add     template
+    remove  template
 
     isActive
     setActive
@@ -274,8 +274,8 @@ public:
     removeAll
     destroy
 
-    forEach (static & dynamic)
-    reference
+    forEach (static & dynamic)  template
+    reference                   template
 
     container
     any         (dynamic version of container)
@@ -390,7 +390,7 @@ public:
     }
 
     template<uint32_t... Ns>
-    void reserveSignature(uint16_t count) {
+    void reserve(uint16_t count) {
         auto& hashData = std::get<State::hashComp>(data);
         auto& activeData = std::get<State::activeComp>(data);
         auto& entityData = std::get<State::entityComp>(data);
@@ -464,14 +464,14 @@ public:
             d = dynamicData[hash.raw()];
         }
 
-        if (d & (0x0001 << 0)) r |= (0x00000001 << dynamic_comp_sequence::value[0]);
-        if (d & (0x0001 << 1)) r |= (0x00000001 << dynamic_comp_sequence::value[1]);
-        if (d & (0x0001 << 2)) r |= (0x00000001 << dynamic_comp_sequence::value[2]);
-        if (d & (0x0001 << 3)) r |= (0x00000001 << dynamic_comp_sequence::value[3]);
-        if (d & (0x0001 << 4)) r |= (0x00000001 << dynamic_comp_sequence::value[4]);
-        if (d & (0x0001 << 5)) r |= (0x00000001 << dynamic_comp_sequence::value[5]);
-        if (d & (0x0001 << 6)) r |= (0x00000001 << dynamic_comp_sequence::value[6]);
-        if (d & (0x0001 << 7)) r |= (0x00000001 << dynamic_comp_sequence::value[7]);
+        if (d & (0x0001 <<  0)) r |= (0x00000001 << dynamic_comp_sequence::value[0]);
+        if (d & (0x0001 <<  1)) r |= (0x00000001 << dynamic_comp_sequence::value[1]);
+        if (d & (0x0001 <<  2)) r |= (0x00000001 << dynamic_comp_sequence::value[2]);
+        if (d & (0x0001 <<  3)) r |= (0x00000001 << dynamic_comp_sequence::value[3]);
+        if (d & (0x0001 <<  4)) r |= (0x00000001 << dynamic_comp_sequence::value[4]);
+        if (d & (0x0001 <<  5)) r |= (0x00000001 << dynamic_comp_sequence::value[5]);
+        if (d & (0x0001 <<  6)) r |= (0x00000001 << dynamic_comp_sequence::value[6]);
+        if (d & (0x0001 <<  7)) r |= (0x00000001 << dynamic_comp_sequence::value[7]);
 
         if (s & (0x0001 <<  0)) r |= (0x00000001 << vector_map_sequence::value[ 0]);
         if (s & (0x0001 <<  1)) r |= (0x00000001 << vector_map_sequence::value[ 1]);
@@ -810,6 +810,16 @@ public:
     public:
         IComponent(State* s) : state(*s) { }
 
+         void insert(uint16_t index) {
+            auto& componentData = std::get<COMP>(state.data);
+            componentData.insert(index);
+        }
+
+        void erase(uint16_t index) {
+            auto& componentData = std::get<COMP>(state.data);
+            componentData.erase(index);
+        }
+
         Ref<T> find(Entity entity) {
             auto& componentData = std::get<COMP>(state.data);
             return componentData.find( entity.index() );
@@ -842,28 +852,12 @@ public:
     }
 
 
-
-
-    /*
-    template<typename S>
-    struct any_helper;
-
-    template<uint32_t... Ns>
-    struct any_helper<TSequence::Make<Ns...>> {
-        using func_ptr = decltype(&State::container<0>);
-        static func_ptr table[] = { &State::container<Ns>... };
-    };
-
-    //Any any(uint32_t comp) {
-    //    return Any( this->(*(any_helper<all_sequence>::table[comp]))() );
-    //}
-*/
-
     /*
         this function gets a reference to an entity components
     */
-
-
+    //Any any(uint32_t comp) {
+    //    return Any( this will have to be a function pointer table that returns the correct IComponent based on passed 'comp' );
+    //}
 
 };
 
