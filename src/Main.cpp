@@ -9,6 +9,7 @@
 #include <Entity.hpp>
 #include <Container.hpp>
 
+#include<sstream>
 #include<fstream>
 
 
@@ -37,6 +38,33 @@ struct Cp {
     };
 
 };
+
+
+
+template<>
+inline void __dump_func<Cp::Body>(std::stringstream& ss, void* ptr) {
+	auto &c = *(reinterpret_cast<Cp::Body*>(ptr));
+	ss << "Body: " << std::endl;
+	ss << "position: " << c.position.x << ", " << c.position.y << std::endl;
+    ss << "velocity: " << c.velocity.x << ", " << c.velocity.y << std::endl;
+    ss << "radius: " << c.radius << std::endl;
+}
+
+template<>
+inline void __dump_func<Cp::Color>(std::stringstream& ss, void* ptr) {
+	auto &c = *(reinterpret_cast<Cp::Color*>(ptr));
+	ss << "Color: " << std::endl;
+	ss << "r, g, b, a: " << c.r << ", " << c.g << ", " << c.b << ", " << c.a << std::endl;
+}
+
+template<>
+inline void __dump_func<Cp::Controller>(std::stringstream& ss, void* ptr) {
+	auto &c = *(reinterpret_cast<Cp::Controller*>(ptr));
+	ss << "Controller: " << std::endl;
+	ss << "cursor: " << c.cursor.x << ", " << c.cursor.y << std::endl;
+	ss << "move: " << c.move.x << ", " << c.move.y << std::endl;
+}
+
 
 
 enum CpType : uint32_t {
@@ -107,9 +135,11 @@ int main()
     sf::Text message;
     message.setFont(font);
     message.setCharacterSize(40);
-    message.setPosition(0.0f, 450.0f);
+    message.setPosition(0.0f, 0.0f);
+    //message.setPosition(0.0f, 450.0f);
     message.setFillColor(sf::Color::White);
     message.setString("Use WASD to move, mouse to move cursor.\nLeft and right mouse button adds and\nRemoves player's hat.");
+    std::stringstream ss;
 
     Ref<Cp::Body> body;
     Ref<Cp::Color> color;
@@ -134,6 +164,7 @@ int main()
 
         state.setActive(playerEntity);
     }
+
 
     for (int i = 0; i < 50; ++i) {
         auto e = state.create();
@@ -179,10 +210,11 @@ int main()
             }
         }
 
+
         {
             using tempSig = TSequence::Make<Body>;
-            state.forEach<tempSig>([&](MyState::Reference<tempSig>& ref) {
-                Entity entity = state.entityFromHash(ref.hash);
+            state.forEach<tempSig>([&](MyState::SRef<tempSig>& r) {
+                Entity entity = state.entityFromHash(r.hash);
                 if (entity != playerEntity) {
                     // every moving entity has a chance of being deleted
                     if (rand()%100 == 0) {
@@ -237,9 +269,14 @@ int main()
         move.Normalize();
 
 
-
         // check to make sure playerEntity is still valid
         if (state.valid(playerEntity) == true) {
+
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space)) {
+                ss.str("");
+                state.dumpFunc(ss, playerEntity);
+                message.setString(ss.str());
+            }
 
             controller = state.find<Controller>(playerEntity);
 
@@ -264,9 +301,9 @@ int main()
 
 
         {
-            state.forEach<Controller>([&](MyState::SReference<Controller>& ref) {
-                VMHash hash = state.hashFromIndex(ref.index);
-                controller = ref.value;
+            state.container<Controller>().forEach([&](MyState::DRef<Controller>& r) {
+                VMHash hash = state.hashFromIndex(r.index);
+                controller = r.ref;
                 body = state.find<Body>(hash);
                 body->velocity = controller->move;
             });
@@ -275,8 +312,8 @@ int main()
 
         {
             using tempSig = TSequence::Make<Body>;
-            state.forEach<tempSig>([&](MyState::Reference<tempSig>& ref) {
-                std::tie(body) = ref.pack;
+            state.forEach<tempSig>([&](MyState::SRef<tempSig>& r) {
+                std::tie(body) = r.pack;
                 body->position += body->velocity;
             });
         }
@@ -289,8 +326,8 @@ int main()
 
         {
             using tempSig = TSequence::Make<Body, Color>;
-            state.forEach<tempSig>([&](MyState::Reference<tempSig>& ref) {
-                std::tie(body, color) = ref.pack;
+            state.forEach<tempSig>([&](MyState::SRef<tempSig>& r) {
+                std::tie(body, color) = r.pack;
                 circle.setFillColor(sf::Color(color->r*255, color->g*255, color->b*255));
                 circle.setPosition(body->position.x, body->position.y);
                 circle.setRadius(body->radius);
@@ -300,9 +337,9 @@ int main()
         }
 
         {
-            state.forEach<HatColor>([&](MyState::SReference<HatColor>& ref) {
-                VMHash hash = state.hashFromIndex(ref.index);
-                hatColor = ref.value;
+            state.container<HatColor>().forEach([&](MyState::DRef<HatColor>& r) {
+                VMHash hash = state.hashFromIndex(r.index);
+                hatColor = r.ref;
                 body = state.find<Body>(hash);
 
                 circle.setFillColor(sf::Color(hatColor->r*255, hatColor->g*255, hatColor->b*255));

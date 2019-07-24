@@ -60,6 +60,10 @@ public:
         return ptr_ == nullptr;
     }
 
+	void* getVoid() {
+		return ptr_;
+	}
+
 private:
     T* ptr_; // pointer
 
@@ -75,7 +79,10 @@ private:
     T value;
 
 public:
-    using value_type = T;
+	constexpr static bool needs_move = false;
+	constexpr static bool dynamic_comp = false;
+
+	using value_type = T;
 
     Ref<T> getRef() {
         return Ref<T>(value);
@@ -98,7 +105,14 @@ private:
     table_type table;
 
 public:
+	constexpr static bool needs_move = false;
+	constexpr static bool dynamic_comp = false;
+
     using value_type = T;
+
+	void clear() {
+		table.clear();
+	}
 
     size_t size() const {
         return table.size();
@@ -121,6 +135,14 @@ public:
         return ref;
     }
 
+	typename table_type::iterator begin() {
+		return table.begin();
+	}
+
+	typename table_type::iterator end() {
+		return table.end();
+	}
+
     void sort() {
         std::sort(table.begin(), table.end());
     }
@@ -130,6 +152,11 @@ public:
             table.resize((uint32_t)(index + 1));
         }
     }
+
+	void add(const T& t) {
+		table.push_back(t);
+	}
+
 
     void erase(uint16_t index) {
         assert(index >= 0 && index < table.size());
@@ -145,9 +172,18 @@ public:
     would probably be best if it was a robin hood
     hashing hash table.
 */
+// forward declare outward interface to HashMap
+template<typename T>
+class IHashMap;
+
 template<typename T>
 class HashMap {
 public:
+	using cinterface = IHashMap<T>;
+
+	constexpr static bool needs_move = false;
+	constexpr static bool dynamic_comp = true;
+
     using table_type = std::map<uint16_t, T>;
 
 private:
@@ -208,8 +244,16 @@ public:
     are zero size.  It is used internally with the 'Active'
     component that signifies that the entity is active or not.
 */
+// forward declare outward interface to EmptyHashMap
+class IEmptyHashMap;
+
 class EmptyHashMap {
 public:
+	using cinterface = IEmptyHashMap;
+
+	constexpr static bool needs_move = false;
+	constexpr static bool dynamic_comp = true;
+
     void insert(uint16_t index) { }
     void erase(uint16_t index) { }
 };
@@ -229,9 +273,17 @@ struct VMHash {
     uint16_t index;
 };
 
+// forward declare outward interface to VectorMap
+template<typename T>
+class IVectorMap;
+
 template<typename T>
 class VectorMap {
 public:
+	constexpr static bool needs_move = true;
+	constexpr static bool dynamic_comp = false;
+
+	using cinterface = IVectorMap<T>;
     using hash_type = VMHash;
     using table_type = std::map<uint16_t, std::vector<T>>;
     using vector_iterator = typename std::vector<T>::iterator;
@@ -315,8 +367,6 @@ public:
     }
 
 };
-
-
 
 
 
