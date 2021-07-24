@@ -72,7 +72,10 @@
 		<Linker>
 			<Add directory="D:/Programming/C++/SFML-2.5.1/lib" />
 		</Linker>
-		<Unit filename="../../src/Pong.cpp" />
+		<Unit filename="../../include/components.hpp" />
+		<Unit filename="../../include/container.hpp" />
+		<Unit filename="../../include/math.hpp" />
+		<Unit filename="../../src/main.cpp" />
 		<Extensions>
 			<code_completion />
 			<envvars />
