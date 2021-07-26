@@ -6,7 +6,8 @@
 #include <SFML/Graphics.hpp>
 #include <SFML/Audio.hpp>
 
-#include <container.hpp>
+
+#include <game.hpp>
 
 
 // billy boy
@@ -16,11 +17,7 @@
 /// \return Application exit code
 ///
 ////////////////////////////////////////////////////////////
-int main()
-{
-
-
-
+int main() {
 
 
 

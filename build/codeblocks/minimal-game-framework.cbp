@@ -74,6 +74,7 @@
 		</Linker>
 		<Unit filename="../../include/components.hpp" />
 		<Unit filename="../../include/container.hpp" />
+		<Unit filename="../../include/game.hpp" />
 		<Unit filename="../../include/math.hpp" />
 		<Unit filename="../../src/main.cpp" />
 		<Extensions>
