@@ -25,21 +25,6 @@
 //inline Real Atan2(Real y, Real x) { return std::atan2(y, x); }
 
 
-/*
-class Scaler {
-public:
-    Scaler(int16_t value) { m_value = value; }
-
-    friend Scaler fastAdd(Scaler lhs, Scaler rhs) { return Scaler(lhs.m_value + rhs.m_value); }
-
-//private:
-    int16_t m_value;
-
-};
-*/
-
-
-
 class MersenneTwister {
 private:
     // static data and functions
@@ -80,11 +65,23 @@ public:
         r = M;
     }
 
-    //double NextDouble() {
-    //    return Next(32) / 4294967296.0f;
+    //double nextDouble() {
+    //    return next(32) / 4294967296.0f;
     //}
 
-    uint32_t next() {
+    int32_t next(int32_t min, int32_t max) {
+        return (int32_t)(nextUint() % (max + 1 - min)) + min;
+    }
+
+    int32_t next(int32_t max) {
+        return (int32_t)(nextUint() % (max + 1));
+    }
+
+    int32_t next() {
+        return (int32_t)nextUint();
+    }
+
+    uint32_t nextUint() {
         uint32_t y = (x[p] & UPPER_MASK) | (x[q] & LOWER_MASK);
         x[p] = x[r] ^ (y >> 1) ^ ((y & 1) * MATRIX_A);
         y = x[p];
@@ -101,7 +98,7 @@ public:
         return y;
     }
 
-    uint32_t next(uint32_t bits) {
+    uint32_t nextUint(uint32_t bits) {
         uint32_t y = (x[p] & UPPER_MASK) | (x[q] & LOWER_MASK);
         x[p] = x[r] ^ (y >> 1) ^ ((y & 1) * MATRIX_A);
         y = x[p];
@@ -120,7 +117,8 @@ public:
 };
 
 
-typedef int32_t Scaler;
+//typedef int32_t Scaler;
+typedef float Scaler;
 
 
 class Vector2 {
@@ -139,6 +137,18 @@ public:
 
     Vector2 operator-(const Vector2& v)  const
         { return Vector2(x-v.x, y-v.y); }
+
+    Vector2& operator+=(const Vector2& v) {
+        x += v.x;
+        y += v.y;
+        return *this;
+    }
+
+    Vector2& operator-=(const Vector2& v) {
+        x -= v.x;
+        y -= v.y;
+        return *this;
+    }
 
 };
 
