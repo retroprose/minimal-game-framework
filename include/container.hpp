@@ -3,7 +3,6 @@
 
 #include <cassert>
 #include <cstring>
-#include <fstream>
 
 
 /*
@@ -169,85 +168,6 @@ protected:
 
 
 
-
-
-
-/*
-    Class that represents an entity, is simply a 32 bit unsigned integer.
-*/
-
-class Entity {
-public:
-    Entity() { }
-    Entity(uint16_t i) : _index(0), _generation(0) { }
-    Entity(uint16_t i, uint16_t g) : _index(i), _generation(g) { }
-
-    bool isNull() { return _index == 0 && _generation == 0; }
-
-    uint16_t index() { return _index; }
-    uint16_t generation() { return _generation; }
-
-private:
-    uint16_t _index;
-    uint16_t _generation;
-};
-
-
-
-
-
-
-
-class Components {
-public:
-    void resize(int s) {
-        _manager.resize(s);
-        _generation.resize(s);
-    }
-
-    void smartCopy(const Components& other) {
-        _manager.smartCopy(other._manager);
-        _generation.smartCopy(other._generation);
-    }
-
-    bool valid(Entity entity) {
-        return !entity.isNull() && entity.generation() == _generation[entity.index()];
-    }
-
-    Entity fromIndex(uint16_t index) {
-        return Entity(index, _generation[index]);
-    }
-
-    void destroy(Entity entity) {
-        if (valid(entity) == true) {
-            ++_generation[entity.index()];
-            _manager.free( entity.index() );
-        }
-    }
-
-    Entity create() {
-        Entity entity(0);
-        uint16_t value = _manager.allocate();
-        if (value != PoolTable::EndOfList) {
-            _generation.insert(value);  // this will be tricky
-            entity = Entity(value, _generation[value]);
-        }
-        return entity;
-    }
-
-    void clear() {
-        for (int32_t i = 0; i < _generation.capacity(); ++i) {
-            _generation[i] = 0;
-        }
-        resize(0);
-        _manager.reset();
-    }
-
-protected:
-    PoolTable _manager;
-    Table<uint16_t> _generation;
-
-};
 
 
 

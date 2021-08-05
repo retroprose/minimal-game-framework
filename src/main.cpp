@@ -5,6 +5,7 @@
 ////////////////////////////////////////////////////////////
 #include <fstream>
 #include <sstream>
+
 #include <SFML/Graphics.hpp>
 #include <SFML/Audio.hpp>
 
@@ -12,21 +13,12 @@
 #include <game.hpp>
 
 
-
-std::string make_bits(uint32_t b) {
-    std::stringstream s;
-    uint32_t mask = 0x1;
-    for (int32_t i = 0; i < 32; ++i) {
-        if (mask & b) {
-            s << "1";
-        } else {
-            s << "0";
-        }
-        mask <<= 1;
-    }
-    return s.str();
+int32_t random_num(int m) {
+    int32_t min = 0;
+    int32_t max = m;
+    int32_t r = (int32_t)(rand() % (max + 1 - min)) + min;
+    return r;
 }
-
 
 
 // billy boy
@@ -39,10 +31,10 @@ std::string make_bits(uint32_t b) {
 int main() {
 
     sf::Color color_table[] = {
-        sf::Color(0xff000000),
-        sf::Color(0xff000000),
+        sf::Color(0x000000ff),  // rrggbbaa
+        sf::Color(0x000000ff),
 
-        sf::Color(0xff0000ff),
+        sf::Color(0xff0000ff),  // enemy_00_a
         sf::Color(0xff0000ff),
         sf::Color(0xff0000ff),
         sf::Color(0xff0000ff),
@@ -54,50 +46,50 @@ int main() {
         sf::Color(0xff0000ff),
         sf::Color(0xff0000ff),
 
-        sf::Color(0xff0000c8),
-        sf::Color(0xff0000c8),
-        sf::Color(0xff0000c8),
-        sf::Color(0xff0000c8),
-        sf::Color(0xff0000c8),
-        sf::Color(0xff0000c8),
-        sf::Color(0xff0000c8),
-        sf::Color(0xff0000c8),
-        sf::Color(0xff0000c8),
-        sf::Color(0xff0000c8),
-        sf::Color(0xff0000c8),
+        sf::Color(0xc80000ff),  // enemy_00_b
+        sf::Color(0xc80000ff),
+        sf::Color(0xc80000ff),
+        sf::Color(0xc80000ff),
+        sf::Color(0xc80000ff),
+        sf::Color(0xc80000ff),
+        sf::Color(0xc80000ff),
+        sf::Color(0xc80000ff),
+        sf::Color(0xc80000ff),
+        sf::Color(0xc80000ff),
+        sf::Color(0xc80000ff),
 
-        sf::Color(0xffff0000),
-        sf::Color(0xffc80000),
+        sf::Color(0x00ff00ff),  // player_ship_0
+        sf::Color(0x00c800ff),
 
-        sf::Color(0xffff00ff),
-        sf::Color(0xff00ffff),
+        sf::Color(0x00ffffff),  // player_shot
+        sf::Color(0xff00ffff),  // enemy_shot
 
-        sf::Color(0xffffff00), // easy_1?
-        sf::Color(0xffffff00), // easy_2?
+        sf::Color(0xffffffff), // easy_0?
+        sf::Color(0xffffffff), // easy_1?
 
-        sf::Color(0xffc8c8c8),
-        sf::Color(0xffc8c8c8),
-        sf::Color(0xffc8c8c8),
-        sf::Color(0xffc8c8c8),
-        sf::Color(0xffc8c8c8),
-        sf::Color(0xffc8c8c8),
-        sf::Color(0xffc8c8c8),
+        sf::Color(0xc8c8c8ff),  // player_boom_0
+        sf::Color(0xc8c8c8ff),
+        sf::Color(0xc8c8c8ff),
+        sf::Color(0xc8c8c8ff),
+        sf::Color(0xc8c8c8ff),
+        sf::Color(0xc8c8c8ff),
+        sf::Color(0xc8c8c8ff),
 
-        sf::Color(0xffc8c8c8),
-        sf::Color(0xffc8c8c8),
-        sf::Color(0xffc8c8c8),
-        sf::Color(0xffc8c8c8),
-        sf::Color(0xffc8c8c8),
-        sf::Color(0xffc8c8c8),
-        sf::Color(0xffc8c8c8),
+        sf::Color(0xc8c8c8ff),  // enemy_boom_0
+        sf::Color(0xc8c8c8ff),
+        sf::Color(0xc8c8c8ff),
+        sf::Color(0xc8c8c8ff),
+        sf::Color(0xc8c8c8ff),
+        sf::Color(0xc8c8c8ff),
+        sf::Color(0xc8c8c8ff),
 
-        sf::Color(0xff00ff00),
-        sf::Color(0xff00c800),
+        sf::Color(0x0000ffff),  // local_player_0
+        sf::Color(0x0000c8ff),
 
-        sf::Color(0xff000000),
-        sf::Color(0xff000000),
-        sf::Color(0xff000000),
-        sf::Color(0xff000000)
+        sf::Color(0xffff00ff),  // text_ready
+        sf::Color(0xffff00ff),  // text_no
+        sf::Color(0xffff00ff),  // text_great
+        sf::Color(0xffff00ff)   // target
     };
 
 
@@ -159,12 +151,18 @@ int main() {
     sf::Text message;
     message.setFont(font);
     message.setCharacterSize(40);
-    message.setPosition(0.0f, 500.0f);
+    message.setPosition(0.0f, 0.0f);
     message.setFillColor(sf::Color::White);
     message.setString("WHY IS NOTHING WORKING?!");
 
+    int32_t max_players = 64;
+    int32_t max_shoot = 500;
+    int32_t max_turn = 500;
     int32_t local_player = 0;
     Slot slot[64];
+    uint16_t ai_shoot[64];
+    uint16_t ai_turn[64];
+    uint8_t ai_direction[64];
     for (int32_t i = 0; i < 64; ++i) {
         Slot& s = slot[i];
         s.connected = false;
@@ -175,12 +173,20 @@ int main() {
         s.input.primary = false;
         s.input.state = 0;
         s.input.x = 0;
+
+        ai_direction[i] = random_num(2);
+        ai_turn[i] = random_num(max_turn) + 1;
+        ai_shoot[i] = random_num(max_shoot) + 1;
+        if (i < max_players) {
+            s.connected = true;
+        }
     }
-    slot[local_player].connected = true;
 
     Game game;
     game.setInputEasy(slot);
     game.init(0x03048923);
+
+
 
     // This will be the main game loop
     while (window.isOpen())
@@ -195,12 +201,12 @@ int main() {
             }
             if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Return)
             {
-                std::ofstream out("dump.txt");
+                /*std::ofstream out("dump.txt");
                 for( auto it = game.components.filter(0x0); it.moveNext(); ) {
                     auto r = it.get();
                     out << it.index << " - " << make_bits(r.comp.flags) << std::endl;
                 }
-                out.close();
+                out.close();*/
             }
         }
 
@@ -232,8 +238,38 @@ int main() {
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Right))    slot[local_player].input.right = true;
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space))    slot[local_player].input.primary = true;
 
+        for (int32_t i = 1; i < 64; ++i) {
+            slot[i].input.left = false;
+            slot[i].input.right = false;
+            slot[i].input.primary = false;
+            --ai_shoot[i];
+            --ai_turn[i];
+            if (ai_shoot[i] == 0) {
+                slot[i].input.primary = true;
+                ai_shoot[i] = random_num(max_shoot) + 1;
+            }
+            if (ai_turn[i] == 0) {
+                ai_direction[i] = !ai_direction[i];
+                ai_turn[i] = random_num(max_turn) + 1;
+            }
+            if (ai_direction[i] == 0) {
+                slot[i].input.left = true;
+            } else {
+                slot[i].input.right = true;
+            }
+        }
+
         game.setInputEasy(slot);
         game.update();
+
+        std::stringstream ss;
+        //ss << "enemyCount: " << game.global.enemyCount << std::endl;
+        //ss << "enemySpeed: " << game.global.enemySpeed << std::endl;
+        //ss << "playing: " << game.global.playing << std::endl;
+        //ss << "textAnimate: " << game.global.textAnimate << std::endl;
+        //ss << "textType: " << game.global.textType << std::endl;
+        ss << "capacity: " << game.components.comp.capacity();
+        message.setString(ss.str());
 
         // Rendering code
         // Clear the window

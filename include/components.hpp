@@ -9,6 +9,28 @@
 
 
 
+/*
+    Class that represents an entity, is simply a 32 bit unsigned integer.
+*/
+class Entity {
+public:
+    Entity() { }
+    Entity(uint16_t i) : _index(0), _generation(0) { }
+    Entity(uint16_t i, uint16_t g) : _index(i), _generation(g) { }
+
+    bool isNull() { return _index == 0 && _generation == 0; }
+
+    uint16_t index() { return _index; }
+    uint16_t generation() { return _generation; }
+
+private:
+    uint16_t _index;
+    uint16_t _generation;
+};
+
+
+
+
 
 
 struct Animator {
@@ -42,13 +64,14 @@ public:
 struct ObjType {
 public:
     enum Type : uint8_t {
-        Player = 0,
-        Enemy = 1,
-        Bullet = 2,
-        BadBullet = 3,
-        Boom = 4,
-        PlayerBoom = 5,
-        ShotCleaner = 6
+        Null = 0,
+        Player = 1,
+        Enemy = 2,
+        Bullet = 3,
+        BadBullet = 4,
+        Boom = 5,
+        PlayerBoom = 6,
+        ShotCleaner = 7
     };
 };
 
@@ -198,52 +221,81 @@ public:
 
 
 
-class Cp : public Components {
+class Cp {
 public:
-    void resize(int s) {
-        Components::resize(s);
-        _comp.resize(s);
-        _objectId.resize(s);
-        _body.resize(s);
-        _player.resize(s);
-        _enemy.resize(s);
-        _animator.resize(s);
+     void resize(int s) {
+        manager.resize(s);
+        generation.resize(s);
+        comp.resize(s);
+        objectId.resize(s);
+        body.resize(s);
+        player.resize(s);
+        enemy.resize(s);
+        animator.resize(s);
     }
 
     void smartCopy(const Cp& other) {
-        Components::smartCopy(other);
-        _comp.smartCopy(other._comp);
-        _objectId.smartCopy(other._objectId);
-        _body.smartCopy(other._body);
-        _player.smartCopy(other._player);
-        _enemy.smartCopy(other._enemy);
-        _animator.smartCopy(other._animator);
+        manager.smartCopy(other.manager);
+        generation.smartCopy(other.generation);
+        comp.smartCopy(other.comp);
+        objectId.smartCopy(other.objectId);
+        body.smartCopy(other.body);
+        player.smartCopy(other.player);
+        enemy.smartCopy(other.enemy);
+        animator.smartCopy(other.animator);
+    }
+
+    bool valid(Entity entity) {
+        return !entity.isNull() && entity.generation() == generation[entity.index()];
     }
 
     void destroy(Entity entity) {
-        Components::destroy(entity);
-        _comp[entity.index()].flags = 0x0;
+        if (valid(entity) == true) {
+            ++generation[entity.index()];
+            comp[entity.index()].flags = 0x0;
+            manager.free( entity.index() );
+        }
     }
 
     Entity create() {
-        Entity entity = Components::create();
-        if (!entity.isNull()) {
-            _comp.insert(entity.index());
-            _objectId.insert(entity.index());
-            _body.insert(entity.index());
-            _player.insert(entity.index());
-            _enemy.insert(entity.index());
-            _animator.insert(entity.index());
+        Entity entity(0);
+        uint16_t value = manager.allocate();
+        if (value != PoolTable::EndOfList) {
+            generation.insert(value);  // this will be tricky
+            comp.insert(value);
+            objectId.insert(value);
+            body.insert(value);
+            player.insert(value);
+            enemy.insert(value);
+            animator.insert(value);
+
+            comp[entity.index()].flags = 0x0;
+            entity = Entity(value, generation[value]);
         }
         return entity;
     }
 
-    Table<Cf> _comp;
-    Table<uint8_t> _objectId;
-    Table<Body> _body;
-    Table<Player> _player;
-    Table<Enemy> _enemy;
-    Table<Animator> _animator;
+    void clear() {
+        for (int32_t i = 0; i < generation.capacity(); ++i) {
+            generation[i] = 0;
+        }
+        resize(0);
+        manager.reset();
+    }
+
+
+
+
+
+    PoolTable manager;
+
+    Table<uint16_t> generation;
+    Table<Cf> comp;
+    Table<uint8_t> objectId;
+    Table<Body> body;
+    Table<Player> player;
+    Table<Enemy> enemy;
+    Table<Animator> animator;
 
     struct Prefab {
     public:
@@ -256,16 +308,12 @@ public:
 
         void setEntity(Cp& c, Entity e) {
             if (c.valid(e) == true) {
-                if (comp.flags & Cf::Component) c._comp[e.index()] = comp;
-                if (comp.flags & Cf::ObjectId) c._objectId[e.index()] = objectId;
-                if (comp.flags & Cf::Body) c._body[e.index()] = body;
-                if (comp.flags & Cf::Player) c._player[e.index()] = player;
-                if (comp.flags & Cf::Enemy) c._enemy[e.index()] = enemy;
-                if (comp.flags & Cf::Animator) c._animator[e.index()] = animator;
-            } else {
-                std::fstream out("events.txt");
-                out << " FAIL! ";
-                out.close();
+                if (comp.flags & Cf::Component) c.comp[e.index()] = comp;
+                if (comp.flags & Cf::ObjectId) c.objectId[e.index()] = objectId;
+                if (comp.flags & Cf::Body) c.body[e.index()] = body;
+                if (comp.flags & Cf::Player) c.player[e.index()] = player;
+                if (comp.flags & Cf::Enemy) c.enemy[e.index()] = enemy;
+                if (comp.flags & Cf::Animator) c.animator[e.index()] = animator;
             }
         }
     };
@@ -284,13 +332,13 @@ public:
         Animator& animator;
 
         HelperRef(Cp& c, uint16_t i) :
-            entity(i, c._generation[i]),
-            comp(c._comp[i]),
-            objectId(c._objectId[i]),
-            body(c._body[i]),
-            player(c._player[i]),
-            enemy(c._enemy[i]),
-            animator(c._animator[i])
+            entity(i, c.generation[i]),
+            comp(c.comp[i]),
+            objectId(c.objectId[i]),
+            body(c.body[i]),
+            player(c.player[i]),
+            enemy(c.enemy[i]),
+            animator(c.animator[i])
         { }
     };
 
@@ -303,14 +351,14 @@ public:
         bool moveNext() {
             for (;;) {
                 index++;
-                if (index >= cp._comp.size()) {
+                if (index >= cp.comp.size()) {
                     break;
                 }
-                if ((cp._comp[index].flags & mask) == mask) {
+                if ((cp.comp[index].flags & mask) == mask) {
                     break;
                 }
             }
-            return index < cp._comp.size();
+            return index < cp.comp.size();
         }
 
         Iterator(Cp& c, uint8_t m, int32_t i) : cp(c), mask(m), index(i) { }

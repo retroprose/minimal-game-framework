@@ -4,14 +4,15 @@
 #include <components.hpp>
 #include <map>
 
-#include <fstream>
+
 
 class Data {
 public:
     // other constants
     int32_t enemyCount = 11;
 
-    Scaler textAnimateCounter = 0.00833333333333333f;
+    //Scaler textAnimateCounter = 0.00833333333333333f;
+    Scaler textAnimateCounter = 8333333;
 
     enum Images : uint16_t {
         _null = 0,
@@ -72,17 +73,22 @@ public:
         static Data data;
         Cp::Prefab p;
 
+        // null object
+        p.comp.flags = Cf::Component;
+        p.objectId = ObjType::Null;
+        data.prefabs[p.objectId] = p;
+
         // shot cleaner
-        p.comp.flags = Cf::Active | Cf::Component | Cf::Body | Cf::ObjectId,
-        p.objectId = ObjType::ShotCleaner,
+        p.comp.flags = Cf::Active | Cf::Component | Cf::Body | Cf::ObjectId;
+        p.objectId = ObjType::ShotCleaner;
         p.body.position = Vector2(0, 0);
         p.body.velocity = Vector2(0, 0);
         p.body.size = Vector2(960, 540);  // 960, 540
         data.prefabs[p.objectId] = p;
 
         // player
-        p.comp.flags = Cf::Active | Cf::Component | Cf::Body | Cf::ObjectId | Cf::Player | Cf::Animator,
-        p.objectId = ObjType::Player,
+        p.comp.flags = Cf::Active | Cf::Component | Cf::Body | Cf::ObjectId | Cf::Player | Cf::Animator;
+        p.objectId = ObjType::Player;
         p.animator.frame = player_ship_0;
         p.animator.count = 0;
         p.player.slot = -1;
@@ -94,8 +100,8 @@ public:
         data.prefabs[p.objectId] = p;
 
         // enemy
-        p.comp.flags = Cf::Active | Cf::Component | Cf::Body | Cf::ObjectId | Cf::Enemy | Cf::Animator,
-        p.objectId = ObjType::Enemy,
+        p.comp.flags = Cf::Active | Cf::Component | Cf::Body | Cf::ObjectId | Cf::Enemy | Cf::Animator;
+        p.objectId = ObjType::Enemy;
         p.enemy.direction = 1;
         p.enemy.counter = 0;
         p.enemy.delayFire = 0;
@@ -107,8 +113,8 @@ public:
         data.prefabs[p.objectId] = p;
 
         // bullet
-        p.comp.flags = Cf::Active | Cf::Component | Cf::Body | Cf::ObjectId | Cf::Animator,
-        p.objectId = ObjType::Bullet,
+        p.comp.flags = Cf::Active | Cf::Component | Cf::Body | Cf::ObjectId | Cf::Animator;
+        p.objectId = ObjType::Bullet;
         p.animator.frame = player_shot;
         p.animator.count = 0;
         p.body.position = Vector2(0, 0);
@@ -117,8 +123,8 @@ public:
         data.prefabs[p.objectId] = p;
 
         // bad bullet
-        p.comp.flags = Cf::Active | Cf::Component | Cf::Body | Cf::ObjectId | Cf::Animator,
-        p.objectId = ObjType::BadBullet,
+        p.comp.flags = Cf::Active | Cf::Component | Cf::Body | Cf::ObjectId | Cf::Animator;
+        p.objectId = ObjType::BadBullet;
         p.animator.frame = enemy_shot;
         p.animator.count = 0;
         p.body.position = Vector2(0, 0);
@@ -127,8 +133,8 @@ public:
         data.prefabs[p.objectId] = p;
 
         // boom
-        p.comp.flags = Cf::Active | Cf::Component | Cf::Body | Cf::ObjectId | Cf::Animator,
-        p.objectId = ObjType::Boom,
+        p.comp.flags = Cf::Active | Cf::Component | Cf::Body | Cf::ObjectId | Cf::Animator;
+        p.objectId = ObjType::Boom;
         p.animator.frame = enemy_boom_0;
         p.animator.count = 0;
         p.body.position = Vector2(0, 0);
@@ -137,8 +143,8 @@ public:
         data.prefabs[p.objectId] = p;
 
         // player boom
-        p.comp.flags = Cf::Active | Cf::Component | Cf::Body | Cf::ObjectId | Cf::Animator,
-        p.objectId = ObjType::PlayerBoom,
+        p.comp.flags = Cf::Active | Cf::Component | Cf::Body | Cf::ObjectId | Cf::Animator;
+        p.objectId = ObjType::PlayerBoom;
         p.animator.frame = player_boom_0;
         p.animator.count = 0;
         p.body.position = Vector2(0, 0);
@@ -196,6 +202,7 @@ public:
 
     void smartCopy(const Game& other) {
         slots.smartCopy(other.slots);
+        gameOver = other.gameOver;
         rand = other.rand;
         global = other.global;
         components.smartCopy(other.components);
@@ -344,7 +351,6 @@ public:
         uint16_t local_player[] = {
             Data::local_player_0,
             Data::local_player_1,
-
             Data::_end_list
         };
         registerAnimation(local_player);
@@ -376,7 +382,9 @@ public:
     void registerAnimation(uint16_t* list) {
         int32_t i = 0;
         while (list[i] != Data::_end_list) {
-            animation_table[list[i]] = list[i + 1];
+            if (list[i] != Data::_null) {
+                animation_table[list[i]] = list[i + 1];
+            }
             ++i;
         }
         uint16_t last = list[i - 1];
@@ -481,13 +489,14 @@ public:
         {
             global.textAnimate += data.textAnimateCounter;
 
-            if (global.textAnimate > 1)
+            if (global.textAnimate > 1000000000)
             {
-                if (global.textType != Data::text_ready)
+                // this was for when the game actually quit back to the lobby!
+                /*if (global.textType != Data::text_ready)
                 {
                     gameOver = true;
                 }
-                else
+                else*/
                 {
 
                     global.playing = true;
@@ -673,6 +682,9 @@ public:
                         eventList.last().createEntity(ObjType::PlayerBoom, r.body.position);
                     }
                 }
+
+                if (r.body.position.x < -960) r.body.position.x = -960;
+                if (r.body.position.x > 960) r.body.position.x = 960;
 
                 if (slot.input.left == true) r.body.velocity.x = -5;
                 if (slot.input.right == true) r.body.velocity.x = 5;
