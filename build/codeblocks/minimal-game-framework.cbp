@@ -74,8 +74,14 @@
 		</Linker>
 		<Unit filename="../../include/components.hpp" />
 		<Unit filename="../../include/container.hpp" />
+		<Unit filename="../../include/entity.hpp" />
 		<Unit filename="../../include/game.hpp" />
-		<Unit filename="../../include/math.hpp" />
+		<Unit filename="../../include/math2d/defs.h" />
+		<Unit filename="../../include/math2d/interval.h" />
+		<Unit filename="../../include/math2d/math2d.h" />
+		<Unit filename="../../include/math2d/mersennetwister.h" />
+		<Unit filename="../../include/math2d/rayscan.h" />
+		<Unit filename="../../include/math2d/vector2.h" />
 		<Unit filename="../../src/main.cpp" />
 		<Extensions>
 			<code_completion />

@@ -5,19 +5,51 @@
 ////////////////////////////////////////////////////////////
 #include <fstream>
 #include <sstream>
+#include <string>
 
 #include <SFML/Graphics.hpp>
 #include <SFML/Audio.hpp>
 
 
-#include <game.hpp>
+#include <components.hpp>
 
 
-int32_t random_num(int m) {
-    int32_t min = 0;
-    int32_t max = m;
-    int32_t r = (int32_t)(rand() % (max + 1 - min)) + min;
-    return r;
+std::string getBinary(uint32_t value) {
+    std::stringstream ss;
+    uint32_t mask = 0x1;
+    for (int i = 0; i < 32; i++) {
+        if (value & mask) {
+            ss << "1";
+        } else {
+            ss << "0";
+        }
+        mask = mask << 1;
+    }
+    return ss.str();
+}
+
+void freeListDump(std::string filename, FreeList& fl) {
+    std::ofstream ss(filename, std::ios::app);
+    ss << "List" << std::endl;
+    for (int j = 0; j < fl.table.size(); j++) {
+        ss << "chunk: " << j << " - " << fl.head_table[j] << std::endl;
+        for (int i = 0; i < fl.table[j].size(); i++) {
+            ss << i << ": " << fl.table[j][i] << std::endl;
+        }
+    }
+    ss.close();
+}
+
+void mapDump(std::string f, std::map<uint16_t, bool>& c) {
+    std::ofstream ss(f, std::ios::app);
+    ss << "List" << std::endl;
+    auto it = c.begin();
+    while (it != c.end()) {
+        uint16_t value = it->first;
+        ss << FreeList::getChunk(value) << ": " << FreeList::getIndex(value) << " - " << value << std::endl;
+        ++it;
+    }
+    ss.close();
 }
 
 
@@ -29,69 +61,6 @@ int32_t random_num(int m) {
 ///
 ////////////////////////////////////////////////////////////
 int main() {
-
-    sf::Color color_table[] = {
-        sf::Color(0x000000ff),  // rrggbbaa
-        sf::Color(0x000000ff),
-
-        sf::Color(0xff0000ff),  // enemy_00_a
-        sf::Color(0xff0000ff),
-        sf::Color(0xff0000ff),
-        sf::Color(0xff0000ff),
-        sf::Color(0xff0000ff),
-        sf::Color(0xff0000ff),
-        sf::Color(0xff0000ff),
-        sf::Color(0xff0000ff),
-        sf::Color(0xff0000ff),
-        sf::Color(0xff0000ff),
-        sf::Color(0xff0000ff),
-
-        sf::Color(0xc80000ff),  // enemy_00_b
-        sf::Color(0xc80000ff),
-        sf::Color(0xc80000ff),
-        sf::Color(0xc80000ff),
-        sf::Color(0xc80000ff),
-        sf::Color(0xc80000ff),
-        sf::Color(0xc80000ff),
-        sf::Color(0xc80000ff),
-        sf::Color(0xc80000ff),
-        sf::Color(0xc80000ff),
-        sf::Color(0xc80000ff),
-
-        sf::Color(0x00ff00ff),  // player_ship_0
-        sf::Color(0x00c800ff),
-
-        sf::Color(0x00ffffff),  // player_shot
-        sf::Color(0xff00ffff),  // enemy_shot
-
-        sf::Color(0xffffffff), // easy_0?
-        sf::Color(0xffffffff), // easy_1?
-
-        sf::Color(0xc8c8c8ff),  // player_boom_0
-        sf::Color(0xc8c8c8ff),
-        sf::Color(0xc8c8c8ff),
-        sf::Color(0xc8c8c8ff),
-        sf::Color(0xc8c8c8ff),
-        sf::Color(0xc8c8c8ff),
-        sf::Color(0xc8c8c8ff),
-
-        sf::Color(0xc8c8c8ff),  // enemy_boom_0
-        sf::Color(0xc8c8c8ff),
-        sf::Color(0xc8c8c8ff),
-        sf::Color(0xc8c8c8ff),
-        sf::Color(0xc8c8c8ff),
-        sf::Color(0xc8c8c8ff),
-        sf::Color(0xc8c8c8ff),
-
-        sf::Color(0x0000ffff),  // local_player_0
-        sf::Color(0x0000c8ff),
-
-        sf::Color(0xffff00ff),  // text_ready
-        sf::Color(0xffff00ff),  // text_no
-        sf::Color(0xffff00ff),  // text_great
-        sf::Color(0xffff00ff)   // target
-    };
-
 
 
     // Define some constants
@@ -115,22 +84,13 @@ int main() {
 
 
     // Create the player circle to be controlled by WASD
-    /*
-    sf::CircleShape player;
-    player.setPosition(gameWidth / 2, gameHeight / 2);
-    player.setRadius(playerRadius - 3);
-    player.setOutlineThickness(3);
-    player.setOutlineColor(sf::Color::Black);
-    player.setFillColor(sf::Color::White);
-    player.setOrigin(playerRadius / 2, playerRadius / 2);
-    */
-    sf::RectangleShape player;
-    player.setPosition(gameWidth / 2, gameHeight / 2);
-    player.setSize(sf::Vector2f(playerRadius - 3, playerRadius - 3));
-    player.setOutlineThickness(3);
-    player.setOutlineColor(sf::Color::Black);
-    player.setFillColor(sf::Color::White);
-    player.setOrigin(playerRadius / 2, playerRadius / 2);
+    sf::RectangleShape rectangle;
+    rectangle.setPosition(gameWidth / 2, gameHeight / 2);
+    rectangle.setSize(sf::Vector2f(playerRadius - 3, playerRadius - 3));
+    rectangle.setOutlineThickness(3);
+    rectangle.setOutlineColor(sf::Color::Black);
+    rectangle.setFillColor(sf::Color::White);
+    rectangle.setOrigin(playerRadius / 2, playerRadius / 2);
 
     // Create the cursor that will follow the mouse
     sf::CircleShape cursor;
@@ -155,36 +115,85 @@ int main() {
     message.setFillColor(sf::Color::White);
     message.setString("WHY IS NOTHING WORKING?!");
 
-    int32_t max_players = 64;
-    int32_t max_shoot = 500;
-    int32_t max_turn = 500;
-    int32_t local_player = 0;
-    Slot slot[64];
-    uint16_t ai_shoot[64];
-    uint16_t ai_turn[64];
-    uint8_t ai_direction[64];
-    for (int32_t i = 0; i < 64; ++i) {
-        Slot& s = slot[i];
-        s.connected = false;
-        s.input.debug = 0;
-        s.input.left = false;
-        s.input.right = false;
-        s.input.nonEmpty = false;
-        s.input.primary = false;
-        s.input.state = 0;
-        s.input.x = 0;
+    /*
+    std::string dfile = "test_free_list.txt";
+    { std::ofstream outie(dfile); outie.close(); }
 
-        ai_direction[i] = random_num(2);
-        ai_turn[i] = random_num(max_turn) + 1;
-        ai_shoot[i] = random_num(max_shoot) + 1;
-        if (i < max_players) {
-            s.connected = true;
-        }
+    std::map<uint16_t, bool> map_values;
+    FreeList flist;
+    flist.resize(5);
+    int32_t test_values[] = {
+        0,3,2,1,0,2,1,0,0,4,4,3,0,-1
+    };
+
+    int32_t al;
+    int32_t value;
+    int32_t g = 0;
+    while ( (value = test_values[g++]) != -1 ) {
+        al = flist.allocate(value);
+        map_values[al] = true;
     }
 
-    Game game;
-    game.setInputEasy(slot);
-    game.init(0x03048923);
+    //freeListDump(dfile, flist);
+    mapDump(dfile, map_values);
+
+    flist.free(4);
+    flist.free(1);
+    flist.free(2);
+    flist.free(8194);
+    flist.free(24578);
+
+    freeListDump(dfile, flist);
+    */
+
+
+    bool start = true;
+
+    Cp cp;
+    auto playerEntity = cp.create(cp._Body_Color);
+
+    {
+        cp.add(playerEntity, Cp::fActive | Cp::fController);
+        auto r = cp.get<_Body_Color>(playerEntity);
+
+        // notice that references use -> instead of . to access members
+        r.body.position = Vector2(400, 300);    // set to center of screen
+        r.body.velocity = Vector2(0, 0);        // zero velocity
+        r.body.radius = playerRadius;           // radius of player
+        r.color = Color(1.0f, 1.0f, 1.0f);      // player will be white (notice we dereference with *)
+    }
+
+
+
+    for (int i = 0; i < 50; ++i) {
+        auto e = cp.create(cp._Body_Color);
+
+        // random chance of having a hat
+        int r = rand()%100;
+        if (r < 10) {
+            //state.add<HatColor>(e);
+        }
+
+        {
+            cp.add(e, Cp::fActive);
+
+            auto r = cp.get<_Body_Color>(e);
+
+            r.body.position = Vector2(rand()%800, rand()%600);
+            r.body.velocity = Vector2(rand()%5, rand()%5);
+            //r.body.velocity = Vector2(0, 0);
+            r.body.radius = playerRadius;
+            r.color = Color(rand()%10000/10000.0f, rand()%10000/10000.0f, rand()%10000/10000.0f);
+
+            // some will not have hats, so need to check that the reference isn't null first
+            //if (hatColor.isNull() == false) {
+            //    *hatColor = Cp::Color(rand()%10000/10000.0f, rand()%10000/10000.0f, rand()%10000/10000.0f);
+            //}
+
+        }
+
+    }
+
 
 
 
@@ -201,124 +210,119 @@ int main() {
             }
             if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Return)
             {
-                /*std::ofstream out("dump.txt");
-                for( auto it = game.components.filter(0x0); it.moveNext(); ) {
-                    auto r = it.get();
-                    out << it.index << " - " << make_bits(r.comp.flags) << std::endl;
+                // pressed return!
+            }
+        }
+
+
+
+        {
+
+            for (auto it = cp.filter(Cp::fActive | Cp::fBody); it.next();) {
+                Entity e = it.entity();
+                auto& body = *cp.body(e);
+                if (e != playerEntity) {
+                    // every moving entity has a chance of being deleted
+                    if (rand()%100 == 0) {
+                        cp.destroy(e);
+                    }
                 }
-                out.close();*/
             }
         }
 
-        // update coordinates, this is where the game state will be updated
-        sf::Vector2f v;
+        for (int i = 0; i < 1; ++i) {
+            auto e = state.create();
 
-        v.x = sf::Mouse::getPosition(window).x;
-        v.y = sf::Mouse::getPosition(window).y;
+            state.change<Body, Color>(e);
 
-        cursor.setPosition(v);
-
-        v.x = v.y = 0.0f;
-
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::W))    v.y = -5.0f;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::S))    v.y =  5.0f;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::A))    v.x = -5.0f;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::D))    v.x =  5.0f;
-
-        //v.x += player.getPosition().x;
-        //v.y += player.getPosition().y;
-
-        //player.setPosition(v);
-
-        slot[local_player].input.left = false;
-        slot[local_player].input.right = false;
-        slot[local_player].input.primary = false;
-
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Left))     slot[local_player].input.left = true;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Right))    slot[local_player].input.right = true;
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space))    slot[local_player].input.primary = true;
-
-        for (int32_t i = 1; i < 64; ++i) {
-            slot[i].input.left = false;
-            slot[i].input.right = false;
-            slot[i].input.primary = false;
-            --ai_shoot[i];
-            --ai_turn[i];
-            if (ai_shoot[i] == 0) {
-                slot[i].input.primary = true;
-                ai_shoot[i] = random_num(max_shoot) + 1;
+            // random chance of having a hat
+            int r = rand()%100;
+            if (r < 10) {
+                state.add<HatColor>(e);
             }
-            if (ai_turn[i] == 0) {
-                ai_direction[i] = !ai_direction[i];
-                ai_turn[i] = random_num(max_turn) + 1;
+
+            {
+                std::tie(body, color, hatColor) = state.reference<Body, Color, HatColor>(e).pack;
+
+                body->position = Vector2(rand()%800, rand()%600);
+                body->velocity = Vector2(rand()%5, rand()%5);
+                //ref.body->velocity = Vector2(0, 0);
+                body->radius = playerRadius;
+                *color = Cp::Color(rand()%10000/10000.0f, rand()%10000/10000.0f, rand()%10000/10000.0f);
+
+                // some will not have hats, so need to check that the reference isn't null first
+                if (hatColor.isNull() == false) {
+                    *hatColor = Cp::Color(rand()%10000/10000.0f, rand()%10000/10000.0f, rand()%10000/10000.0f);
+                }
+
             }
-            if (ai_direction[i] == 0) {
-                slot[i].input.left = true;
-            } else {
-                slot[i].input.right = true;
+            state.setActive(e);
+        }
+
+
+        cursor.setPosition(sf::Mouse::getPosition(window).x, sf::Mouse::getPosition(window).y);
+
+
+        Vector2 move(0.0f, 0.0f);
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::W))    move.y = -5.0f;
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::S))    move.y =  5.0f;
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::A))    move.x = -5.0f;
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::D))    move.x =  5.0f;
+        v.Normalize();
+
+
+        // check to make sure playerEntity is still valid
+        /*if (cp.valid(playerEntity) == true) {
+
+            auto itController = cp.controller(playerEntity);
+
+            // check to make sure the entity does in fact have that component
+            if ( controller.valid() ) {
+                Controller& controller = *itController;
+
+                // set controller data
+                controller.cursor = cursorPos;
+                controller.move = move;
+
+                if (sf::Mouse::isButtonPressed(sf::Mouse::Button::Left)) {
+                    state.add<HatColor>(playerEntity);
+                    // notice how we need to re-get the reference after updating the entity
+                    hatColor = state.find<HatColor>(playerEntity);
+                    *hatColor = Cp::Color(0, 0, 0);
+                } else if (sf::Mouse::isButtonPressed(sf::Mouse::Button::Right)) {
+                    state.remove<HatColor>(playerEntity);
+                }
             }
         }
 
-        game.setInputEasy(slot);
-        game.update();
+        {
+            for (auto it = cp.controller(entity); it.next();) {
+                auto r = cp.get<_Body_Controller>(Entity(it.index()));
+                r.body.velocity = r.controller.move;
+            }
+        }*/
 
-        std::stringstream ss;
-        //ss << "enemyCount: " << game.global.enemyCount << std::endl;
-        //ss << "enemySpeed: " << game.global.enemySpeed << std::endl;
-        //ss << "playing: " << game.global.playing << std::endl;
-        //ss << "textAnimate: " << game.global.textAnimate << std::endl;
-        //ss << "textType: " << game.global.textType << std::endl;
-        ss << "capacity: " << game.components.comp.capacity();
-        message.setString(ss.str());
+        {
+            for (auto it = cp.filter(Cp::fActive | Cp::fBody); it.next();) {
+                auto r = cp.get<_Body_Color>(it.fastEntity());
+                r.body.position += r.body.velocity;
+            }
+        }
+
 
         // Rendering code
         // Clear the window
         window.clear(sf::Color(50, 200, 50));
 
-        // Drawing function!
-        bool draw;
-        float tx, ty;
-        uint16_t tf;
-        for( auto it = game.components.filter(Cf::Active | Cf::Component | Cf::Body | Cf::ObjectId | Cf::Animator); it.moveNext(); ) {
-            auto r = it.get();
-
-            draw = true;
-
-            if (r.comp.flags & Cf::Player)
-            {
-                if (r.player.slot == local_player)
-                {
-                    draw = false;
-                    tx = (float)r.body.position.x;
-                    ty = (float)r.body.position.y;
-                    tf = r.animator.frame;
-                }
-            }
-            if (draw == true)
-            {
-                player.setFillColor(color_table[r.animator.frame]);
-                v.x = r.body.position.x + (1920 / 2);
-                v.y = 1080 - (r.body.position.y + (1080 / 2));
-                player.setPosition(v);
-                v.x = r.body.size.x * 2;
-                v.y = r.body.size.y * 2;
-                player.setSize(v);
-                window.draw(player);
-            }
-
+        // draw stuff!
+        for (auto it = cp.filter(Cp::fActive | Cp::fBody | Cp::fColor); it.next();) {
+            auto r = cp.get<_Body_Color>(it.fastEntity());
+            rectangle.setFillColor(sf::Color(r.color.r*255, r.color.g*255, r.color.b*255));
+            rectangle.setPosition(r.body.position.x, r.body.position.y);
+            rectangle.setSize(sf::Vector2f(r.body.radius, r.body.radius));
+            rectangle.setOrigin(r.body.radius / 2.0f, r.body.radius / 2.0f);
+            window.draw(rectangle);
         }
-
-        if (tf == Data::player_ship_0) tf = Data::local_player_0;
-        if (tf == Data::player_ship_1) tf = Data::local_player_1;
-
-        player.setFillColor(color_table[tf]);
-        v.x = tx + (1920 / 2);
-        v.y = 1080 - (ty + (1080 / 2));
-        player.setPosition(v);
-        v.x = 16 * 2;
-        v.y = 10 * 2;
-        player.setSize(v);
-        window.draw(player);
 
 
         //window.draw(player);
